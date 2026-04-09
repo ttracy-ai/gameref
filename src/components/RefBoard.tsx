@@ -164,7 +164,11 @@ export default function RefBoard() {
     };
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); }, []);
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (activeOp.current) return; // ignore during move/resize
+    setIsDragOver(true);
+  }, []);
   const handleDragLeave = useCallback(() => setIsDragOver(false), []);
 
   // ── Canvas background → start box select ──────────────────────────────────

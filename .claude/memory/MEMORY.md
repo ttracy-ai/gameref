@@ -1,0 +1,1 @@
+- [GameRef Project Overview](project_gameref.md) — Next.js 16 + Tailwind + jose JWT auth, PureRef-style reference board for Vercel

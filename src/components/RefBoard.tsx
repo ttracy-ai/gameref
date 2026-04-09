@@ -123,10 +123,15 @@ export default function RefBoard() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [shiftHeld, setShiftHeld] = useState(false);
 
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const activeOp = useRef<ActiveOp | null>(null);
   const imagesRef = useRef(images);
   const selectedIdsRef = useRef(selectedIds);
+  const focusedIdRef = useRef<string | null>(null);
+  // Stores the pre-focus position/size so we can restore on second Ctrl+click
+  const focusOrigRef = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({});
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
 
@@ -141,7 +146,14 @@ export default function RefBoard() {
   // ── Persistence ────────────────────────────────────────────────────────────
 
   useEffect(() => { setImages(loadFromStorage()); }, []);
-  useEffect(() => { saveToStorage(images); }, [images]);
+  useEffect(() => {
+    // Save original positions for any focused image so reloads restore cleanly
+    const toSave = images.map(img => {
+      const orig = focusOrigRef.current[img.id];
+      return orig ? { ...img, ...orig } : img;
+    });
+    saveToStorage(toSave);
+  }, [images]);
 
   // ── Drop from Chrome ───────────────────────────────────────────────────────
 
@@ -199,6 +211,71 @@ export default function RefBoard() {
   const handleImagePointerDown = useCallback((e: React.PointerEvent, id: string) => {
     e.stopPropagation();
 
+    // ── Ctrl+click: zoom to fill canvas at native resolution ──────────────────
+    if (e.ctrlKey) {
+      setSelectedIds(new Set());
+      const img = imagesRef.current.find(i => i.id === id);
+      if (!img) return;
+
+      const currentFocused = focusedIdRef.current;
+
+      // Restore any previously focused image
+      if (currentFocused && currentFocused !== id) {
+        const orig = focusOrigRef.current[currentFocused];
+        if (orig) {
+          setImages(prev => prev.map(i => i.id === currentFocused ? { ...i, ...orig } : i));
+          delete focusOrigRef.current[currentFocused];
+        }
+      }
+
+      if (currentFocused === id) {
+        // Second Ctrl+click on same image → restore
+        const orig = focusOrigRef.current[id];
+        if (orig) {
+          setImages(prev => prev.map(i => i.id === id ? { ...i, ...orig } : i));
+          delete focusOrigRef.current[id];
+        }
+        focusedIdRef.current = null;
+        setFocusedId(null);
+        return;
+      }
+
+      // First Ctrl+click → focus
+      focusOrigRef.current[id] = { x: img.x, y: img.y, width: img.width, height: img.height };
+      focusedIdRef.current = id;
+      setFocusedId(id);
+
+      // Bring to front
+      setImages(prev => {
+        const target = prev.find(i => i.id === id);
+        const rest = prev.filter(i => i.id !== id);
+        return target ? [...rest, target] : prev;
+      });
+
+      const canvas = canvasRef.current!;
+      const rect = canvas.getBoundingClientRect();
+
+      const image = new Image();
+      image.src = img.src;
+      image.onload = () => {
+        const maxW = rect.width * 0.95;
+        const maxH = rect.height * 0.95;
+        let w = image.naturalWidth;
+        let h = image.naturalHeight;
+        // Cap at canvas size, but never upscale beyond natural resolution
+        if (w > maxW || h > maxH) {
+          const scale = Math.min(maxW / w, maxH / h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        const x = Math.round((rect.width - w) / 2);
+        const y = Math.round((rect.height - h) / 2);
+        setImages(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
+      };
+      return;
+    }
+
+    // ── Shift+click: toggle selection ─────────────────────────────────────────
     if (e.shiftKey) {
       setSelectedIds(prev => {
         const next = new Set(prev);

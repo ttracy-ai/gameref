@@ -14,14 +14,21 @@ type PlacedImage = {
 };
 
 type DragState = {
+  kind: "move";
   id: string;
   startX: number;
   startY: number;
   imgX: number;
   imgY: number;
+} | {
+  kind: "resize";
+  id: string;
+  startX: number;
+  origWidth: number;
+  origHeight: number;
+  ratio: number;
 };
 
-/** Scale natural image dimensions to something reasonable for the canvas. */
 function getScaledSize(
   naturalW: number,
   naturalH: number,
@@ -50,7 +57,6 @@ function getScaledSize(
   return { width: Math.round(w), height: Math.round(h) };
 }
 
-/** Convert a blob: URL to a permanent base64 data URL. */
 async function blobToDataUrl(blobUrl: string): Promise<string> {
   const res = await fetch(blobUrl);
   const blob = await res.blob();
@@ -62,21 +68,15 @@ async function blobToDataUrl(blobUrl: string): Promise<string> {
   });
 }
 
-/** Pull an image src out of whatever Chrome drops. */
 async function extractImageSrc(dt: DataTransfer): Promise<string | null> {
   if (dt.files.length > 0) {
     const file = dt.files[0];
-    if (file.type.startsWith("image/")) {
-      return URL.createObjectURL(file);
-    }
+    if (file.type.startsWith("image/")) return URL.createObjectURL(file);
   }
 
   const uriList = dt.getData("text/uri-list");
   if (uriList) {
-    const first = uriList
-      .split("\n")
-      .map((u) => u.trim())
-      .find((u) => u && !u.startsWith("#"));
+    const first = uriList.split("\n").map((u) => u.trim()).find((u) => u && !u.startsWith("#"));
     if (first) return first;
   }
 
@@ -102,25 +102,21 @@ function saveToStorage(images: PlacedImage[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
   } catch {
-    console.warn("GameRef: localStorage full — positions saved but some images may not persist.");
+    console.warn("GameRef: localStorage full — some images may not persist.");
   }
 }
 
 export default function RefBoard() {
   const [images, setImages] = useState<PlacedImage[]>([]);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const dragState = useRef<DragState | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const activeOp = useRef<DragState | null>(null);
 
-  // ── Persistence ─────────────────────────────────────────────────────────────
+  // ── Persistence ──────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    setImages(loadFromStorage());
-  }, []);
-
-  useEffect(() => {
-    saveToStorage(images);
-  }, [images]);
+  useEffect(() => { setImages(loadFromStorage()); }, []);
+  useEffect(() => { saveToStorage(images); }, [images]);
 
   // ── Drop from Chrome ─────────────────────────────────────────────────────────
 
@@ -134,31 +130,26 @@ export default function RefBoard() {
     let src = await extractImageSrc(e.dataTransfer);
     if (!src) return;
 
-    // Convert blob URLs to data URLs so they survive page reloads
     if (src.startsWith("blob:")) {
-      src = await blobToDataUrl(src);
+      const dataUrl = await blobToDataUrl(src);
       URL.revokeObjectURL(src);
+      src = dataUrl;
     }
 
     const rect = canvas.getBoundingClientRect();
     const dropX = e.clientX - rect.left;
     const dropY = e.clientY - rect.top;
+    const finalSrc = src;
 
     const img = new Image();
-    img.src = src;
-
+    img.src = finalSrc;
     img.onload = () => {
-      const { width, height } = getScaledSize(
-        img.naturalWidth,
-        img.naturalHeight,
-        rect.width,
-        rect.height
-      );
+      const { width, height } = getScaledSize(img.naturalWidth, img.naturalHeight, rect.width, rect.height);
       setImages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
-          src,
+          src: finalSrc,
           x: Math.max(0, dropX - width / 2),
           y: Math.max(0, dropY - height / 2),
           width,
@@ -168,22 +159,30 @@ export default function RefBoard() {
     };
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); }, []);
+  const handleDragLeave = useCallback(() => setIsDragOver(false), []);
+
+  // ── Canvas background click → deselect ───────────────────────────────────────
+
+  const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.target === canvasRef.current) setSelectedId(null);
   }, []);
 
-  const handleDragLeave = useCallback(() => {
-    setIsDragOver(false);
-  }, []);
+  // ── Image pointer down: shift+click = select, plain click = move ─────────────
 
-  // ── Move images around the canvas ────────────────────────────────────────────
-
-  const handlePointerDown = useCallback(
+  const handleImagePointerDown = useCallback(
     (e: React.PointerEvent, id: string, imgX: number, imgY: number) => {
       e.stopPropagation();
+
+      if (e.shiftKey) {
+        setSelectedId((prev) => (prev === id ? null : id));
+        return;
+      }
+
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      dragState.current = { id, startX: e.clientX, startY: e.clientY, imgX, imgY };
+      activeOp.current = { kind: "move", id, startX: e.clientX, startY: e.clientY, imgX, imgY };
+
+      // Bring to front
       setImages((prev) => {
         const target = prev.find((i) => i.id === id);
         if (!target) return prev;
@@ -193,21 +192,48 @@ export default function RefBoard() {
     []
   );
 
+  // ── Resize handle pointer down ────────────────────────────────────────────────
+
+  const handleResizePointerDown = useCallback(
+    (e: React.PointerEvent, id: string, origWidth: number, origHeight: number) => {
+      e.stopPropagation();
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      activeOp.current = {
+        kind: "resize",
+        id,
+        startX: e.clientX,
+        origWidth,
+        origHeight,
+        ratio: origHeight / origWidth,
+      };
+    },
+    []
+  );
+
+  // ── Pointer move: drives both move and resize ─────────────────────────────────
+
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    const ds = dragState.current;
-    if (!ds) return;
-    const dx = e.clientX - ds.startX;
-    const dy = e.clientY - ds.startY;
+    const op = activeOp.current;
+    if (!op) return;
+
+    if (op.kind === "resize") {
+      const dx = e.clientX - op.startX;
+      const newWidth = Math.max(50, op.origWidth + dx);
+      const newHeight = Math.round(newWidth * op.ratio);
+      setImages((prev) =>
+        prev.map((img) => img.id === op.id ? { ...img, width: newWidth, height: newHeight } : img)
+      );
+      return;
+    }
+
+    const dx = e.clientX - op.startX;
+    const dy = e.clientY - op.startY;
     setImages((prev) =>
-      prev.map((img) =>
-        img.id === ds.id ? { ...img, x: ds.imgX + dx, y: ds.imgY + dy } : img
-      )
+      prev.map((img) => img.id === op.id ? { ...img, x: op.imgX + dx, y: op.imgY + dy } : img)
     );
   }, []);
 
-  const handlePointerUp = useCallback(() => {
-    dragState.current = null;
-  }, []);
+  const handlePointerUp = useCallback(() => { activeOp.current = null; }, []);
 
   return (
     <div
@@ -218,12 +244,13 @@ export default function RefBoard() {
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
+      onPointerDown={handleCanvasPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
       {images.length === 0 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-neutral-600 select-none pointer-events-none">
-          <span className="text-sm">Drag images from Chrome to place them</span>
+        <div className="absolute inset-0 flex items-center justify-center text-neutral-600 select-none pointer-events-none text-sm">
+          Drag images from Chrome to place them
         </div>
       )}
 
@@ -233,25 +260,53 @@ export default function RefBoard() {
         </div>
       )}
 
-      {images.map((img) => (
-        <img
-          key={img.id}
-          src={img.src}
-          alt=""
-          draggable={false}
-          onPointerDown={(e) => handlePointerDown(e, img.id, img.x, img.y)}
-          style={{
-            position: "absolute",
-            left: img.x,
-            top: img.y,
-            width: img.width,
-            height: img.height,
-            cursor: "grab",
-            userSelect: "none",
-            touchAction: "none",
-          }}
-        />
-      ))}
+      {images.map((img) => {
+        const isSelected = selectedId === img.id;
+        return (
+          <div
+            key={img.id}
+            onPointerDown={(e) => handleImagePointerDown(e, img.id, img.x, img.y)}
+            style={{
+              position: "absolute",
+              left: img.x,
+              top: img.y,
+              width: img.width,
+              height: img.height,
+              cursor: "grab",
+              touchAction: "none",
+              userSelect: "none",
+              outline: isSelected ? "2px solid #22c55e" : "none",
+              outlineOffset: "2px",
+            }}
+          >
+            <img
+              src={img.src}
+              alt=""
+              draggable={false}
+              style={{ width: "100%", height: "100%", display: "block", pointerEvents: "none" }}
+            />
+
+            {/* Resize handle — only when selected */}
+            {isSelected && (
+              <div
+                onPointerDown={(e) => handleResizePointerDown(e, img.id, img.width, img.height)}
+                style={{
+                  position: "absolute",
+                  bottom: -5,
+                  right: -5,
+                  width: 14,
+                  height: 14,
+                  background: "#22c55e",
+                  border: "2px solid #15803d",
+                  borderRadius: 2,
+                  cursor: "se-resize",
+                  zIndex: 10,
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

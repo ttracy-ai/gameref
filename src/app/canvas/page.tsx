@@ -79,7 +79,9 @@ export default function CanvasPage() {
 
       {/* Canvas area */}
       <main className="flex-1 flex items-center justify-center text-neutral-600 select-none text-sm">
-        Canvas coming soon
+        {active
+          ? `${ribbonItems.find((i) => i.id === active)?.label} canvas coming soon`
+          : "Select a tool to get started"}
       </main>
     </div>
   );

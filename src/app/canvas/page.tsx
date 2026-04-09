@@ -2,6 +2,7 @@
 
 import { ScrollText, Images, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import RefBoard from "@/components/RefBoard";
 
 type RibbonItem = {
   id: string;
@@ -77,12 +78,16 @@ export default function CanvasPage() {
         </button>
       </aside>
 
-      {/* Canvas area */}
-      <main className="flex-1 flex items-center justify-center text-neutral-600 select-none text-sm">
-        {active
-          ? `${ribbonItems.find((i) => i.id === active)?.label} canvas coming soon`
-          : "Select a tool to get started"}
-      </main>
+      {/* Main area */}
+      {active === "refboard" ? (
+        <RefBoard />
+      ) : (
+        <main className="flex-1 flex items-center justify-center text-neutral-600 select-none text-sm">
+          {active
+            ? `${ribbonItems.find((i) => i.id === active)?.label} canvas coming soon`
+            : "Select a tool to get started"}
+        </main>
+      )}
     </div>
   );
 }

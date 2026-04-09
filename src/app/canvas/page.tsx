@@ -1,6 +1,6 @@
 "use client";
 
-import { ScrollText, ChevronLeft, ChevronRight } from "lucide-react";
+import { ScrollText, Images, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 type RibbonItem = {
@@ -14,6 +14,11 @@ const ribbonItems: RibbonItem[] = [
     id: "gdd",
     icon: <ScrollText size={22} />,
     label: "Game Design Document",
+  },
+  {
+    id: "refboard",
+    icon: <Images size={22} />,
+    label: "Reference Board",
   },
 ];
 

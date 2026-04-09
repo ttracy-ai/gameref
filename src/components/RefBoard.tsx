@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+
+const STORAGE_KEY = "gameref_refboard_v1";
 
 type PlacedImage = {
   id: string;
@@ -33,14 +35,12 @@ function getScaledSize(
   let w = naturalW;
   let h = naturalH;
 
-  // Scale down if too large for the canvas
   if (w > maxW || h > maxH) {
     const scale = Math.min(maxW / w, maxH / h);
     w *= scale;
     h *= scale;
   }
 
-  // Scale up if tiny
   if (Math.max(w, h) < minDim) {
     const scale = minDim / Math.max(w, h);
     w *= scale;
@@ -50,9 +50,20 @@ function getScaledSize(
   return { width: Math.round(w), height: Math.round(h) };
 }
 
+/** Convert a blob: URL to a permanent base64 data URL. */
+async function blobToDataUrl(blobUrl: string): Promise<string> {
+  const res = await fetch(blobUrl);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 /** Pull an image src out of whatever Chrome drops. */
 async function extractImageSrc(dt: DataTransfer): Promise<string | null> {
-  // Local file drag (from desktop / file explorer)
   if (dt.files.length > 0) {
     const file = dt.files[0];
     if (file.type.startsWith("image/")) {
@@ -60,7 +71,6 @@ async function extractImageSrc(dt: DataTransfer): Promise<string | null> {
     }
   }
 
-  // Image dragged from a web page — URI list is most reliable
   const uriList = dt.getData("text/uri-list");
   if (uriList) {
     const first = uriList
@@ -70,7 +80,6 @@ async function extractImageSrc(dt: DataTransfer): Promise<string | null> {
     if (first) return first;
   }
 
-  // Fallback: parse src from the HTML snippet Chrome provides
   const html = dt.getData("text/html");
   if (html) {
     const match = html.match(/src=["']([^"']+)["']/);
@@ -80,13 +89,40 @@ async function extractImageSrc(dt: DataTransfer): Promise<string | null> {
   return null;
 }
 
+function loadFromStorage(): PlacedImage[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PlacedImage[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveToStorage(images: PlacedImage[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
+  } catch {
+    console.warn("GameRef: localStorage full — positions saved but some images may not persist.");
+  }
+}
+
 export default function RefBoard() {
   const [images, setImages] = useState<PlacedImage[]>([]);
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<DragState | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  // ── Drop from Chrome ────────────────────────────────────────────────────────
+  // ── Persistence ─────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    setImages(loadFromStorage());
+  }, []);
+
+  useEffect(() => {
+    saveToStorage(images);
+  }, [images]);
+
+  // ── Drop from Chrome ─────────────────────────────────────────────────────────
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
@@ -95,8 +131,14 @@ export default function RefBoard() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const src = await extractImageSrc(e.dataTransfer);
+    let src = await extractImageSrc(e.dataTransfer);
     if (!src) return;
+
+    // Convert blob URLs to data URLs so they survive page reloads
+    if (src.startsWith("blob:")) {
+      src = await blobToDataUrl(src);
+      URL.revokeObjectURL(src);
+    }
 
     const rect = canvas.getBoundingClientRect();
     const dropX = e.clientX - rect.left;
@@ -135,20 +177,13 @@ export default function RefBoard() {
     setIsDragOver(false);
   }, []);
 
-  // ── Move images around the canvas ───────────────────────────────────────────
+  // ── Move images around the canvas ────────────────────────────────────────────
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent, id: string, imgX: number, imgY: number) => {
       e.stopPropagation();
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      dragState.current = {
-        id,
-        startX: e.clientX,
-        startY: e.clientY,
-        imgX,
-        imgY,
-      };
-      // Bring clicked image to top
+      dragState.current = { id, startX: e.clientX, startY: e.clientY, imgX, imgY };
       setImages((prev) => {
         const target = prev.find((i) => i.id === id);
         if (!target) return prev;
@@ -165,9 +200,7 @@ export default function RefBoard() {
     const dy = e.clientY - ds.startY;
     setImages((prev) =>
       prev.map((img) =>
-        img.id === ds.id
-          ? { ...img, x: ds.imgX + dx, y: ds.imgY + dy }
-          : img
+        img.id === ds.id ? { ...img, x: ds.imgX + dx, y: ds.imgY + dy } : img
       )
     );
   }, []);
@@ -188,21 +221,18 @@ export default function RefBoard() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {/* Empty state hint */}
       {images.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-neutral-600 select-none pointer-events-none">
           <span className="text-sm">Drag images from Chrome to place them</span>
         </div>
       )}
 
-      {/* Drop overlay */}
       {isDragOver && (
         <div className="absolute inset-0 border-2 border-dashed border-indigo-500 rounded pointer-events-none z-50 flex items-center justify-center">
           <span className="text-indigo-400 text-sm select-none">Drop to place</span>
         </div>
       )}
 
-      {/* Placed images */}
       {images.map((img) => (
         <img
           key={img.id}
@@ -216,7 +246,7 @@ export default function RefBoard() {
             top: img.y,
             width: img.width,
             height: img.height,
-            cursor: dragState.current?.id === img.id ? "grabbing" : "grab",
+            cursor: "grab",
             userSelect: "none",
             touchAction: "none",
           }}

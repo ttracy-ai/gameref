@@ -25,7 +25,10 @@ type MoveOp = {
 type ResizeOp = {
   kind: "resize";
   startX: number;
-  origSizes: Record<string, { x: number; y: number; width: number; height: number; ratio: number }>;
+  groupLeft: number;
+  groupTop: number;
+  groupOrigWidth: number;
+  origSizes: Record<string, { x: number; y: number; width: number; height: number }>;
 };
 
 type BoxOp = {
@@ -37,18 +40,14 @@ type BoxOp = {
 type ActiveOp = MoveOp | ResizeOp | BoxOp;
 
 type BoxState = {
-  startX: number;
-  startY: number;
-  currentX: number;
-  currentY: number;
+  startX: number; startY: number;
+  currentX: number; currentY: number;
 } | null;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getScaledSize(nW: number, nH: number, cW: number, cH: number) {
-  const maxW = cW * 0.45;
-  const maxH = cH * 0.45;
-  const minDim = 180;
+  const maxW = cW * 0.45, maxH = cH * 0.45, minDim = 180;
   let w = nW, h = nH;
   if (w > maxW || h > maxH) { const s = Math.min(maxW / w, maxH / h); w *= s; h *= s; }
   if (Math.max(w, h) < minDim) { const s = minDim / Math.max(w, h); w *= s; h *= s; }
@@ -86,35 +85,33 @@ async function extractImageSrc(dt: DataTransfer): Promise<string | null> {
 
 function normalizeBox(b: NonNullable<BoxState>) {
   return {
-    x: Math.min(b.startX, b.currentX),
-    y: Math.min(b.startY, b.currentY),
-    w: Math.abs(b.currentX - b.startX),
-    h: Math.abs(b.currentY - b.startY),
+    x: Math.min(b.startX, b.currentX), y: Math.min(b.startY, b.currentY),
+    w: Math.abs(b.currentX - b.startX), h: Math.abs(b.currentY - b.startY),
   };
 }
 
 function boxIntersects(img: PlacedImage, box: { x: number; y: number; w: number; h: number }) {
-  return (
-    img.x < box.x + box.w &&
-    img.x + img.width > box.x &&
-    img.y < box.y + box.h &&
-    img.y + img.height > box.y
-  );
+  return img.x < box.x + box.w && img.x + img.width > box.x &&
+         img.y < box.y + box.h && img.y + img.height > box.y;
+}
+
+function groupBoundsOf(imgs: PlacedImage[]) {
+  if (imgs.length === 0) return null;
+  const x = Math.min(...imgs.map(i => i.x));
+  const y = Math.min(...imgs.map(i => i.y));
+  const right = Math.max(...imgs.map(i => i.x + i.width));
+  const bottom = Math.max(...imgs.map(i => i.y + i.height));
+  return { x, y, width: right - x, height: bottom - y };
 }
 
 function loadFromStorage(): PlacedImage[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as PlacedImage[]) : [];
-  } catch { return []; }
+  try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; }
+  catch { return []; }
 }
 
 function saveToStorage(images: PlacedImage[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
-  } catch {
-    console.warn("GameRef: localStorage full — some images may not persist.");
-  }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(images)); }
+  catch { console.warn("GameRef: localStorage full — some images may not persist."); }
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -127,7 +124,6 @@ export default function RefBoard() {
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const activeOp = useRef<ActiveOp | null>(null);
-  // Stable mirrors for use inside callbacks
   const imagesRef = useRef(images);
   const selectedIdsRef = useRef(selectedIds);
   useEffect(() => { imagesRef.current = images; }, [images]);
@@ -145,7 +141,6 @@ export default function RefBoard() {
     setIsDragOver(false);
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     let src = await extractImageSrc(e.dataTransfer);
     if (!src) return;
     if (src.startsWith("blob:")) {
@@ -153,20 +148,17 @@ export default function RefBoard() {
       URL.revokeObjectURL(src);
       src = dataUrl;
     }
-
     const rect = canvas.getBoundingClientRect();
     const dropX = e.clientX - rect.left;
     const dropY = e.clientY - rect.top;
     const finalSrc = src;
-
     const img = new Image();
     img.src = finalSrc;
     img.onload = () => {
       const { width, height } = getScaledSize(img.naturalWidth, img.naturalHeight, rect.width, rect.height);
       setImages(prev => [...prev, {
         id: crypto.randomUUID(), src: finalSrc,
-        x: Math.max(0, dropX - width / 2),
-        y: Math.max(0, dropY - height / 2),
+        x: Math.max(0, dropX - width / 2), y: Math.max(0, dropY - height / 2),
         width, height,
       }]);
     };
@@ -175,18 +167,20 @@ export default function RefBoard() {
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); }, []);
   const handleDragLeave = useCallback(() => setIsDragOver(false), []);
 
-  // ── Canvas background pointer down → start box select ─────────────────────
+  // ── Canvas background → start box select ──────────────────────────────────
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.target !== canvasRef.current) return;
     const rect = canvasRef.current!.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
     setSelectedIds(new Set());
-    activeOp.current = { kind: "box", startX: sx, startY: sy };
+    activeOp.current = {
+      kind: "box",
+      startX: e.clientX - rect.left,
+      startY: e.clientY - rect.top,
+    };
   }, []);
 
-  // ── Image pointer down: shift+click = toggle, plain = move ────────────────
+  // ── Image pointer down ─────────────────────────────────────────────────────
 
   const handleImagePointerDown = useCallback((e: React.PointerEvent, id: string) => {
     e.stopPropagation();
@@ -202,15 +196,14 @@ export default function RefBoard() {
 
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 
-    const currentSelected = selectedIdsRef.current;
-    const idsToMove: string[] = currentSelected.has(id) ? [...currentSelected] : [id];
-    if (!currentSelected.has(id)) setSelectedIds(new Set([id]));
+    const current = selectedIdsRef.current;
+    const idsToMove = current.has(id) ? [...current] : [id];
+    if (!current.has(id)) setSelectedIds(new Set([id]));
 
-    // Bring to front
     setImages(prev => {
-      const targets = prev.filter(i => idsToMove.includes(i.id));
+      const moving = prev.filter(i => idsToMove.includes(i.id));
       const rest = prev.filter(i => !idsToMove.includes(i.id));
-      return [...rest, ...targets];
+      return [...rest, ...moving];
     });
 
     const origPositions: Record<string, { x: number; y: number }> = {};
@@ -218,28 +211,35 @@ export default function RefBoard() {
       const img = imagesRef.current.find(i => i.id === imgId);
       if (img) origPositions[imgId] = { x: img.x, y: img.y };
     }
-
     activeOp.current = { kind: "move", startX: e.clientX, startY: e.clientY, origPositions };
   }, []);
 
-  // ── Resize handle pointer down ─────────────────────────────────────────────
+  // ── Group resize handle pointer down ───────────────────────────────────────
 
-  const handleResizePointerDown = useCallback((e: React.PointerEvent, handleId: string) => {
+  const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 
-    const ids = [...selectedIdsRef.current];
-    const origSizes: Record<string, { x: number; y: number; width: number; height: number; ratio: number }> = {};
-    for (const imgId of ids) {
-      const img = imagesRef.current.find(i => i.id === imgId);
-      if (img) origSizes[imgId] = { x: img.x, y: img.y, width: img.width, height: img.height, ratio: img.height / img.width };
+    const selected = imagesRef.current.filter(i => selectedIdsRef.current.has(i.id));
+    const bounds = groupBoundsOf(selected);
+    if (!bounds) return;
+
+    const origSizes: Record<string, { x: number; y: number; width: number; height: number }> = {};
+    for (const img of selected) {
+      origSizes[img.id] = { x: img.x, y: img.y, width: img.width, height: img.height };
     }
 
-    activeOp.current = { kind: "resize", startX: e.clientX, origSizes };
-    void handleId; // the handle image is the reference; scale is applied to all
+    activeOp.current = {
+      kind: "resize",
+      startX: e.clientX,
+      groupLeft: bounds.x,
+      groupTop: bounds.y,
+      groupOrigWidth: bounds.width,
+      origSizes,
+    };
   }, []);
 
-  // ── Pointer move: drives all ops ──────────────────────────────────────────
+  // ── Pointer move ───────────────────────────────────────────────────────────
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const op = activeOp.current;
@@ -256,8 +256,7 @@ export default function RefBoard() {
     }
 
     if (op.kind === "move") {
-      const dx = e.clientX - op.startX;
-      const dy = e.clientY - op.startY;
+      const dx = e.clientX - op.startX, dy = e.clientY - op.startY;
       setImages(prev => prev.map(img => {
         const orig = op.origPositions[img.id];
         return orig ? { ...img, x: orig.x + dx, y: orig.y + dy } : img;
@@ -266,23 +265,24 @@ export default function RefBoard() {
     }
 
     if (op.kind === "resize") {
-      // Use the first entry as the scale reference
-      const refId = Object.keys(op.origSizes)[0];
-      const ref = op.origSizes[refId];
-      if (!ref) return;
       const dx = e.clientX - op.startX;
-      const scale = Math.max(0.05, (ref.width + dx) / ref.width);
+      const scale = Math.max(0.05, (op.groupOrigWidth + dx) / op.groupOrigWidth);
       setImages(prev => prev.map(img => {
         const orig = op.origSizes[img.id];
         if (!orig) return img;
-        const newWidth = Math.max(50, Math.round(orig.width * scale));
-        const newHeight = Math.round(newWidth * orig.ratio);
-        return { ...img, width: newWidth, height: newHeight };
+        // Scale position relative to group origin so spacing is preserved
+        return {
+          ...img,
+          x: Math.round(op.groupLeft + (orig.x - op.groupLeft) * scale),
+          y: Math.round(op.groupTop + (orig.y - op.groupTop) * scale),
+          width: Math.max(10, Math.round(orig.width * scale)),
+          height: Math.max(10, Math.round(orig.height * scale)),
+        };
       }));
     }
   }, []);
 
-  // ── Pointer up: finalize box select ──────────────────────────────────────
+  // ── Pointer up ─────────────────────────────────────────────────────────────
 
   const handlePointerUp = useCallback(() => {
     const op = activeOp.current;
@@ -293,7 +293,7 @@ export default function RefBoard() {
       setBoxState(null);
       if (!bs) return;
       const box = normalizeBox(bs);
-      if (box.w < 4 && box.h < 4) return; // treat as click, already cleared selection
+      if (box.w < 4 && box.h < 4) return;
       const hits = imagesRef.current.filter(img => boxIntersects(img, box));
       if (hits.length > 0) setSelectedIds(new Set(hits.map(i => i.id)));
     } else {
@@ -303,7 +303,10 @@ export default function RefBoard() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const selectedImages = images.filter(img => selectedIds.has(img.id));
+  const groupBounds = groupBoundsOf(selectedImages);
   const normalizedBox = boxState ? normalizeBox(boxState) : null;
+  const PAD = 6; // padding around group selection box
 
   return (
     <div
@@ -332,7 +335,7 @@ export default function RefBoard() {
         </div>
       )}
 
-      {/* Box selection rectangle */}
+      {/* Rubber-band selection box */}
       {normalizedBox && normalizedBox.w > 2 && (
         <div
           className="pointer-events-none absolute border border-green-400 bg-green-400/10 z-50"
@@ -341,49 +344,58 @@ export default function RefBoard() {
       )}
 
       {/* Images */}
-      {images.map(img => {
-        const isSelected = selectedIds.has(img.id);
-        return (
+      {images.map(img => (
+        <div
+          key={img.id}
+          onPointerDown={e => handleImagePointerDown(e, img.id)}
+          style={{
+            position: "absolute",
+            left: img.x, top: img.y,
+            width: img.width, height: img.height,
+            cursor: "grab",
+            touchAction: "none",
+            userSelect: "none",
+          }}
+        >
+          <img
+            src={img.src}
+            alt=""
+            draggable={false}
+            style={{ width: "100%", height: "100%", display: "block", pointerEvents: "none" }}
+          />
+        </div>
+      ))}
+
+      {/* Group selection box + single resize handle */}
+      {groupBounds && (
+        <div
+          style={{
+            position: "absolute",
+            left: groupBounds.x - PAD,
+            top: groupBounds.y - PAD,
+            width: groupBounds.width + PAD * 2,
+            height: groupBounds.height + PAD * 2,
+            border: "2px solid #22c55e",
+            pointerEvents: "none",
+            zIndex: 30,
+          }}
+        >
+          {/* Resize handle — bottom-right of the group */}
           <div
-            key={img.id}
-            onPointerDown={e => handleImagePointerDown(e, img.id)}
+            onPointerDown={handleResizePointerDown}
             style={{
               position: "absolute",
-              left: img.x, top: img.y,
-              width: img.width, height: img.height,
-              cursor: "grab",
-              touchAction: "none",
-              userSelect: "none",
-              outline: isSelected ? "2px solid #22c55e" : "none",
-              outlineOffset: "2px",
+              bottom: -7, right: -7,
+              width: 14, height: 14,
+              background: "#22c55e",
+              border: "2px solid #15803d",
+              borderRadius: 2,
+              cursor: "se-resize",
+              pointerEvents: "auto",
             }}
-          >
-            <img
-              src={img.src}
-              alt=""
-              draggable={false}
-              style={{ width: "100%", height: "100%", display: "block", pointerEvents: "none" }}
-            />
-
-            {/* Resize handle */}
-            {isSelected && (
-              <div
-                onPointerDown={e => handleResizePointerDown(e, img.id)}
-                style={{
-                  position: "absolute",
-                  bottom: -5, right: -5,
-                  width: 14, height: 14,
-                  background: "#22c55e",
-                  border: "2px solid #15803d",
-                  borderRadius: 2,
-                  cursor: "se-resize",
-                  zIndex: 10,
-                }}
-              />
-            )}
-          </div>
-        );
-      })}
+          />
+        </div>
+      )}
     </div>
   );
 }

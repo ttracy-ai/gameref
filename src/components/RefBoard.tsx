@@ -121,6 +121,7 @@ export default function RefBoard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [boxState, setBoxState] = useState<BoxState>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [shiftHeld, setShiftHeld] = useState(false);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const activeOp = useRef<ActiveOp | null>(null);
@@ -128,6 +129,14 @@ export default function RefBoard() {
   const selectedIdsRef = useRef(selectedIds);
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(true); };
+    const up = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(false); };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, []);
 
   // ── Persistence ────────────────────────────────────────────────────────────
 
@@ -175,8 +184,9 @@ export default function RefBoard() {
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.target !== canvasRef.current) return;
-    const rect = canvasRef.current!.getBoundingClientRect();
     setSelectedIds(new Set());
+    if (!e.shiftKey) return; // box select requires shift
+    const rect = canvasRef.current!.getBoundingClientRect();
     activeOp.current = {
       kind: "box",
       startX: e.clientX - rect.left,
@@ -384,20 +394,22 @@ export default function RefBoard() {
             zIndex: 30,
           }}
         >
-          {/* Resize handle — bottom-right of the group */}
-          <div
-            onPointerDown={handleResizePointerDown}
-            style={{
-              position: "absolute",
-              bottom: -7, right: -7,
-              width: 14, height: 14,
-              background: "#22c55e",
-              border: "2px solid #15803d",
-              borderRadius: 2,
-              cursor: "se-resize",
-              pointerEvents: "auto",
-            }}
-          />
+          {/* Resize handle — only visible while shift is held */}
+          {shiftHeld && (
+            <div
+              onPointerDown={handleResizePointerDown}
+              style={{
+                position: "absolute",
+                bottom: -7, right: -7,
+                width: 14, height: 14,
+                background: "#22c55e",
+                border: "2px solid #15803d",
+                borderRadius: 2,
+                cursor: "se-resize",
+                pointerEvents: "auto",
+              }}
+            />
+          )}
         </div>
       )}
     </div>

@@ -871,14 +871,27 @@ export default function RefBoard() {
                 </div>
                 <textarea
                   value={note.text}
-                  onChange={e => handleNoteChange(focusedImage.id, note.id, e.target.value)}
+                  onChange={e => {
+                    handleNoteChange(focusedImage.id, note.id, e.target.value);
+                    e.target.style.height = "auto";
+                    e.target.style.height = e.target.scrollHeight + "px";
+                  }}
+                  ref={el => {
+                    if (el) {
+                      el.style.height = "auto";
+                      el.style.height = el.scrollHeight + "px";
+                    }
+                  }}
                   placeholder="Add a note…"
-                  rows={4}
                   style={{
                     background: colors.body,
                     border: "none",
                     outline: "none",
                     resize: "none",
+                    overflow: "hidden",
+                    width: "100%",
+                    display: "block",
+                    minHeight: 64,
                     fontFamily: "inherit",
                     fontSize: 13,
                     color: "#1c1917",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { PanelRight, StickyNote, Plus, Eye, EyeOff, X } from "lucide-react";
 
 const STORAGE_KEY = "gameref_refboard_v1";
@@ -156,17 +156,57 @@ function saveToStorage(images: PlacedImage[]) {
   catch { console.warn("GameRef: localStorage full — some images may not persist."); }
 }
 
-// ── AutoTextarea ─────────────────────────────────────────────────────────────
+// ── GrowTextarea ─────────────────────────────────────────────────────────────
+// Ghost-element technique: an invisible div with identical text drives the
+// height; the textarea is absolutely positioned on top. Pure CSS — no JS
+// height calculations needed.
 
-function AutoTextarea({ style, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = el.scrollHeight + "px";
-  });
-  return <textarea ref={ref} style={{ ...style, overflow: "hidden" }} {...props} />;
+function GrowTextarea({
+  value,
+  onChange,
+  placeholder,
+  style,
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
+  style?: React.CSSProperties;
+}) {
+  const shared: React.CSSProperties = {
+    fontFamily: "inherit",
+    fontSize: style?.fontSize ?? 13,
+    lineHeight: style?.lineHeight ?? 1.6,
+    padding: style?.padding ?? "8px 10px",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    width: "100%",
+    boxSizing: "border-box",
+  };
+  return (
+    <div style={{ position: "relative", minHeight: 64 }}>
+      {/* Ghost div — invisible, drives container height */}
+      <div aria-hidden style={{ ...shared, visibility: "hidden", minHeight: 64 }}>
+        {value + "\u200b" /* zero-width space keeps empty div from collapsing */}
+      </div>
+      {/* Textarea fills the ghost div exactly */}
+      <textarea
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        style={{
+          ...style,
+          ...shared,
+          position: "absolute",
+          inset: 0,
+          height: "100%",
+          resize: "none",
+          overflow: "hidden",
+          border: "none",
+          outline: "none",
+        }}
+      />
+    </div>
+  );
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -863,7 +903,7 @@ export default function RefBoard() {
         </div>
 
         {/* Note cards */}
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 12 }}>
           {focusedImage.notes.length === 0 && (
             <p style={{ fontSize: 12, color: "#525252", textAlign: "center", marginTop: 24 }}>
               No notes yet. Click + to add one.
@@ -872,7 +912,7 @@ export default function RefBoard() {
           {focusedImage.notes.map(note => {
             const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
             return (
-              <div key={note.id} style={{ display: "flex", flexDirection: "column", borderRadius: 2, overflow: "hidden", boxShadow: "2px 3px 8px rgba(0,0,0,0.4)" }}>
+              <div key={note.id} style={{ borderRadius: 2, overflow: "hidden", boxShadow: "2px 3px 8px rgba(0,0,0,0.4)", marginBottom: 10 }}>
                 <div style={{ background: colors.strip, height: 26, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4 }}>
                   <button
                     onClick={() => deleteNote(focusedImage.id, note.id)}
@@ -882,19 +922,12 @@ export default function RefBoard() {
                     <X size={14} />
                   </button>
                 </div>
-                <AutoTextarea
+                <GrowTextarea
                   value={note.text}
                   onChange={e => handleNoteChange(focusedImage.id, note.id, e.target.value)}
                   placeholder="Add a note…"
                   style={{
                     background: colors.body,
-                    border: "none",
-                    outline: "none",
-                    resize: "none",
-                    width: "100%",
-                    display: "block",
-                    minHeight: 64,
-                    fontFamily: "inherit",
                     fontSize: 13,
                     color: "#1c1917",
                     lineHeight: 1.6,

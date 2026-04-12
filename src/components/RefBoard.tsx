@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { PanelRight, StickyNote } from "lucide-react";
 
 const STORAGE_KEY = "gameref_refboard_v1";
 
@@ -125,6 +126,7 @@ export default function RefBoard() {
   const [shiftHeld, setShiftHeld] = useState(false);
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [noteMode, setNoteMode] = useState<"postit" | "panel">("postit");
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const activeOp = useRef<ActiveOp | null>(null);
@@ -135,6 +137,37 @@ export default function RefBoard() {
   const focusOrigRef = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({});
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+
+  // Re-zoom the focused image whenever noteMode changes so it fits the new canvas area
+  useEffect(() => {
+    const id = focusedIdRef.current;
+    if (!id) return;
+    const imgData = imagesRef.current.find(i => i.id === id);
+    if (!imgData) return;
+    requestAnimationFrame(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const image = new window.Image();
+      image.src = imgData.src;
+      const rezoom = () => {
+        const maxW = rect.width * 0.95;
+        const maxH = rect.height * 0.95;
+        let w = image.naturalWidth;
+        let h = image.naturalHeight;
+        if (w > maxW || h > maxH) {
+          const scale = Math.min(maxW / w, maxH / h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        const x = Math.round((rect.width - w) / 2);
+        const y = Math.round((rect.height - h) / 2);
+        setImages(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
+      };
+      if (image.complete) rezoom();
+      else image.onload = rezoom;
+    });
+  }, [noteMode]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(true); };
@@ -227,6 +260,7 @@ export default function RefBoard() {
           setImages(prev => prev.map(i => i.id === currentFocused ? { ...i, ...orig } : i));
           delete focusOrigRef.current[currentFocused];
         }
+        setNoteMode("postit");
       }
 
       if (currentFocused === id) {
@@ -238,6 +272,7 @@ export default function RefBoard() {
         }
         focusedIdRef.current = null;
         setFocusedId(null);
+        setNoteMode("postit");
         return;
       }
 
@@ -405,13 +440,19 @@ export default function RefBoard() {
   const groupBounds = groupBoundsOf(selectedImages);
   const normalizedBox = boxState ? normalizeBox(boxState) : null;
   const PAD = 6; // padding around group selection box
+  const focusedImage = focusedId ? images.find(i => i.id === focusedId) ?? null : null;
 
   return (
+    <div className="flex flex-1 h-full overflow-hidden">
     <div
       ref={canvasRef}
-      className={`relative flex-1 h-full overflow-hidden transition-colors duration-150 ${
+      className={`relative h-full overflow-hidden transition-colors duration-150 ${
         isDragOver ? "bg-neutral-800" : "bg-neutral-900"
       }`}
+      style={{
+        flex: noteMode === "panel" && focusedId ? "2 1 0%" : "1 1 0%",
+        transition: "flex 0.2s ease",
+      }}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -487,8 +528,8 @@ export default function RefBoard() {
               </div>
             )}
 
-            {/* Post-it note editor — shown only when image is focused/enlarged */}
-            {isFocused && (
+            {/* Post-it note editor — shown only when focused in postit mode */}
+            {isFocused && noteMode === "postit" && (
               <div
                 onPointerDown={e => e.stopPropagation()}
                 style={{
@@ -503,8 +544,35 @@ export default function RefBoard() {
                   zIndex: 40,
                 }}
               >
-                {/* Adhesive strip */}
-                <div style={{ background: "#f59e0b", height: 22, flexShrink: 0 }} />
+                {/* Adhesive strip with expand toggle */}
+                <div style={{
+                  background: "#f59e0b",
+                  height: 28,
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  paddingRight: 6,
+                }}>
+                  <button
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={() => setNoteMode("panel")}
+                    title="Expand to side panel"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 3,
+                      display: "flex",
+                      alignItems: "center",
+                      color: "#78350f",
+                      borderRadius: 3,
+                      opacity: 0.75,
+                    }}
+                  >
+                    <PanelRight size={14} />
+                  </button>
+                </div>
 
                 {/* Note body */}
                 <div style={{ background: "#fef08a", padding: "8px 10px 26px", position: "relative" }}>
@@ -578,6 +646,69 @@ export default function RefBoard() {
           )}
         </div>
       )}
+    </div>
+
+    {/* Notes panel — 1/3 width, shown when focused image is in panel mode */}
+    {noteMode === "panel" && focusedImage && (
+      <div
+        onPointerDown={e => e.stopPropagation()}
+        style={{
+          flex: "1 1 0%",
+          display: "flex",
+          flexDirection: "column",
+          borderLeft: "1px solid #404040",
+          overflow: "hidden",
+        }}
+      >
+        {/* Amber header with back toggle */}
+        <div style={{
+          background: "#f59e0b",
+          height: 36,
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          paddingRight: 10,
+        }}>
+          <button
+            onClick={() => setNoteMode("postit")}
+            title="Switch to post-it view"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 4,
+              display: "flex",
+              alignItems: "center",
+              color: "#78350f",
+              borderRadius: 3,
+              opacity: 0.75,
+            }}
+          >
+            <StickyNote size={16} />
+          </button>
+        </div>
+
+        {/* Note body */}
+        <textarea
+          value={focusedImage.note ?? ""}
+          onChange={e => handleNoteChange(focusedImage.id, e.target.value)}
+          placeholder="Add a note…"
+          style={{
+            flex: 1,
+            background: "#fef08a",
+            border: "none",
+            outline: "none",
+            resize: "none",
+            fontFamily: "inherit",
+            fontSize: 14,
+            color: "#1c1917",
+            lineHeight: 1.7,
+            padding: "14px 16px",
+          }}
+        />
+      </div>
+    )}
     </div>
   );
 }

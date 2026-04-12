@@ -850,7 +850,7 @@ export default function RefBoard() {
         </div>
 
         {/* Note cards */}
-        <div style={{ flex: 1, overflow: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
           {focusedImage.notes.length === 0 && (
             <p style={{ fontSize: 12, color: "#525252", textAlign: "center", marginTop: 24 }}>
               No notes yet. Click + to add one.

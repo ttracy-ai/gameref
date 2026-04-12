@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import { PanelRight, StickyNote, Plus, Eye, EyeOff, X } from "lucide-react";
 
 const STORAGE_KEY = "gameref_refboard_v1";
@@ -154,6 +154,19 @@ function loadFromStorage(): PlacedImage[] {
 function saveToStorage(images: PlacedImage[]) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(images)); }
   catch { console.warn("GameRef: localStorage full — some images may not persist."); }
+}
+
+// ── AutoTextarea ─────────────────────────────────────────────────────────────
+
+function AutoTextarea({ style, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+  });
+  return <textarea ref={ref} style={{ ...style, overflow: "hidden" }} {...props} />;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -869,26 +882,15 @@ export default function RefBoard() {
                     <X size={14} />
                   </button>
                 </div>
-                <textarea
+                <AutoTextarea
                   value={note.text}
-                  onChange={e => {
-                    handleNoteChange(focusedImage.id, note.id, e.target.value);
-                    e.target.style.height = "auto";
-                    e.target.style.height = e.target.scrollHeight + "px";
-                  }}
-                  ref={el => {
-                    if (el) {
-                      el.style.height = "auto";
-                      el.style.height = el.scrollHeight + "px";
-                    }
-                  }}
+                  onChange={e => handleNoteChange(focusedImage.id, note.id, e.target.value)}
                   placeholder="Add a note…"
                   style={{
                     background: colors.body,
                     border: "none",
                     outline: "none",
                     resize: "none",
-                    overflow: "hidden",
                     width: "100%",
                     display: "block",
                     minHeight: 64,

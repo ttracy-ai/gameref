@@ -6,10 +6,9 @@ const secret = new TextEncoder().encode(
   process.env.JWT_SECRET ?? "dev-secret-replace-me"
 );
 
-// Routes that don't require authentication
 const PUBLIC_PATHS = ["/login", "/api/auth"];
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {

@@ -144,19 +144,19 @@ export default function RefBoard() {
     if (!id) return;
     const imgData = imagesRef.current.find(i => i.id === id);
     if (!imgData) return;
-    requestAnimationFrame(() => {
+    // Small timeout lets the browser recompute layout before we measure the canvas
+    const t = setTimeout(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
       const image = new window.Image();
       image.src = imgData.src;
       const rezoom = () => {
-        const maxW = rect.width * 0.95;
-        const maxH = rect.height * 0.95;
+        // Fill the full canvas area — never upscale beyond native resolution
         let w = image.naturalWidth;
         let h = image.naturalHeight;
-        if (w > maxW || h > maxH) {
-          const scale = Math.min(maxW / w, maxH / h);
+        if (w > rect.width || h > rect.height) {
+          const scale = Math.min(rect.width / w, rect.height / h);
           w = Math.round(w * scale);
           h = Math.round(h * scale);
         }
@@ -166,7 +166,8 @@ export default function RefBoard() {
       };
       if (image.complete) rezoom();
       else image.onload = rezoom;
-    });
+    }, 50);
+    return () => clearTimeout(t);
   }, [noteMode]);
 
   useEffect(() => {
@@ -451,7 +452,6 @@ export default function RefBoard() {
       }`}
       style={{
         flex: noteMode === "panel" && focusedId ? "2 1 0%" : "1 1 0%",
-        transition: "flex 0.2s ease",
       }}
       onDrop={handleDrop}
       onDragOver={handleDragOver}

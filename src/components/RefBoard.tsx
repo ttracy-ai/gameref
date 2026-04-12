@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { PanelRight, StickyNote, Plus } from "lucide-react";
+import { PanelRight, StickyNote, Plus, Eye, EyeOff } from "lucide-react";
 
 const STORAGE_KEY = "gameref_refboard_v1";
 
@@ -167,6 +167,7 @@ export default function RefBoard() {
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [noteMode, setNoteMode] = useState<NoteMode>("overlay");
+  const [notesVisible, setNotesVisible] = useState(true);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const activeOp = useRef<ActiveOp | null>(null);
@@ -612,36 +613,58 @@ export default function RefBoard() {
               </div>
             )}
 
-            {/* Add note button — shown when image is focused */}
+            {/* Add note / toggle visibility buttons — shown when image is focused */}
             {isFocused && (
-              <button
+              <div
                 onPointerDown={e => e.stopPropagation()}
-                onClick={() => addNote(img.id)}
-                title="Add note"
                 style={{
                   position: "absolute",
                   top: 10,
                   right: 10,
-                  width: 28,
-                  height: 28,
-                  borderRadius: "50%",
-                  background: "rgba(30,30,30,0.75)",
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  color: "#e5e5e5",
                   display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
+                  gap: 6,
                   zIndex: 45,
-                  backdropFilter: "blur(4px)",
                 }}
               >
-                <Plus size={16} />
-              </button>
+                {img.notes.length > 0 && (
+                  <button
+                    onClick={() => setNotesVisible(v => !v)}
+                    title={notesVisible ? "Hide notes" : "Show notes"}
+                    style={{
+                      width: 28, height: 28,
+                      borderRadius: "50%",
+                      background: "rgba(30,30,30,0.75)",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      color: "#e5e5e5",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: "pointer",
+                      backdropFilter: "blur(4px)",
+                    }}
+                  >
+                    {notesVisible ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                )}
+                <button
+                  onClick={() => addNote(img.id)}
+                  title="Add note"
+                  style={{
+                    width: 28, height: 28,
+                    borderRadius: "50%",
+                    background: "rgba(30,30,30,0.75)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    color: "#e5e5e5",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: "pointer",
+                    backdropFilter: "blur(4px)",
+                  }}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
             )}
 
-            {/* Overlay notes — shown when focused in overlay mode */}
-            {isFocused && noteMode === "overlay" && img.notes.map(note => {
+            {/* Overlay notes — shown when focused in overlay mode and notes are visible */}
+            {isFocused && noteMode === "overlay" && notesVisible && img.notes.map(note => {
               const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
               return (
                 <div

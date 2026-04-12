@@ -686,22 +686,40 @@ export default function RefBoard() {
                 }}
               >
                 {img.notes.length > 0 && (
-                  <button
-                    onClick={() => setNotesVisible(v => !v)}
-                    title={notesVisible ? "Hide notes" : "Show notes"}
-                    style={{
-                      width: 28, height: 28,
-                      borderRadius: "50%",
-                      background: "rgba(30,30,30,0.75)",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                      color: "#e5e5e5",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      cursor: "pointer",
-                      backdropFilter: "blur(4px)",
-                    }}
-                  >
-                    {notesVisible ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setNotesVisible(v => !v)}
+                      title={notesVisible ? "Hide notes" : "Show notes"}
+                      style={{
+                        width: 28, height: 28,
+                        borderRadius: "50%",
+                        background: "rgba(30,30,30,0.75)",
+                        border: "1px solid rgba(255,255,255,0.15)",
+                        color: "#e5e5e5",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        cursor: "pointer",
+                        backdropFilter: "blur(4px)",
+                      }}
+                    >
+                      {notesVisible ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                    <button
+                      onClick={() => setNoteMode("panel")}
+                      title="Expand to panel"
+                      style={{
+                        width: 28, height: 28,
+                        borderRadius: "50%",
+                        background: "rgba(30,30,30,0.75)",
+                        border: "1px solid rgba(255,255,255,0.15)",
+                        color: "#e5e5e5",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        cursor: "pointer",
+                        backdropFilter: "blur(4px)",
+                      }}
+                    >
+                      <PanelRight size={15} />
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => addNote(img.id)}

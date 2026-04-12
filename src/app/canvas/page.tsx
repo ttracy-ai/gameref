@@ -68,6 +68,13 @@ export default function CanvasPage() {
           </div>
         )}
 
+        {/* Version — pinned above collapse toggle */}
+        {!collapsed && (
+          <span className="absolute bottom-10 text-neutral-600 select-none" style={{ fontSize: 9 }}>
+            {process.env.NEXT_PUBLIC_APP_VERSION}
+          </span>
+        )}
+
         {/* Collapse toggle — pinned to bottom */}
         <button
           onClick={() => setCollapsed(!collapsed)}

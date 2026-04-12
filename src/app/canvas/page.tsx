@@ -52,7 +52,7 @@ export default function CanvasPage() {
                   w-10 h-10 rounded-lg transition-colors
                   ${
                     active === item.id
-                      ? "bg-indigo-600 text-white"
+                      ? "bg-neutral-600 text-neutral-100"
                       : "text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
                   }
                 `}

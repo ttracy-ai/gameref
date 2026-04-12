@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { PanelRight, StickyNote, Plus, Eye, EyeOff } from "lucide-react";
+import { PanelRight, StickyNote, Plus, Eye, EyeOff, X } from "lucide-react";
 
 const STORAGE_KEY = "gameref_refboard_v1";
 
@@ -419,6 +419,12 @@ export default function RefBoard() {
     }));
   }, []);
 
+  const deleteNote = useCallback((imageId: string, noteId: string) => {
+    setImages(prev => prev.map(img => img.id !== imageId ? img : {
+      ...img, notes: img.notes.filter(n => n.id !== noteId),
+    }));
+  }, []);
+
   const handleNoteChange = useCallback((imageId: string, noteId: string, text: string) => {
     setImages(prev => prev.map(img => img.id !== imageId ? img : {
       ...img,
@@ -715,18 +721,17 @@ export default function RefBoard() {
                       onPointerDown={e => e.stopPropagation()}
                       onClick={() => setNoteMode("panel")}
                       title="Expand to panel"
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        padding: 3,
-                        display: "flex",
-                        alignItems: "center",
-                        color: "rgba(0,0,0,0.5)",
-                        borderRadius: 3,
-                      }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", alignItems: "center", color: "rgba(0,0,0,0.5)", borderRadius: 3 }}
                     >
                       <PanelRight size={14} />
+                    </button>
+                    <button
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={() => deleteNote(img.id, note.id)}
+                      title="Delete note"
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", alignItems: "center", color: "rgba(0,0,0,0.5)", borderRadius: 3 }}
+                    >
+                      <X size={14} />
                     </button>
                   </div>
 
@@ -855,7 +860,15 @@ export default function RefBoard() {
             const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
             return (
               <div key={note.id} style={{ display: "flex", flexDirection: "column", borderRadius: 2, overflow: "hidden", boxShadow: "2px 3px 8px rgba(0,0,0,0.4)" }}>
-                <div style={{ background: colors.strip, height: 18, flexShrink: 0 }} />
+                <div style={{ background: colors.strip, height: 26, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4 }}>
+                  <button
+                    onClick={() => deleteNote(focusedImage.id, note.id)}
+                    title="Delete note"
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", alignItems: "center", color: "rgba(0,0,0,0.45)", borderRadius: 3 }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
                 <textarea
                   value={note.text}
                   onChange={e => handleNoteChange(focusedImage.id, note.id, e.target.value)}

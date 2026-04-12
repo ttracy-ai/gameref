@@ -15,6 +15,8 @@ type PlacedImage = {
   width: number;
   height: number;
   note?: string;
+  noteFx?: number; // note position as fraction of image width (0–1)
+  noteFy?: number; // note position as fraction of image height (0–1)
 };
 
 type MoveOp = {
@@ -135,6 +137,7 @@ export default function RefBoard() {
   const focusedIdRef = useRef<string | null>(null);
   // Stores the pre-focus position/size so we can restore on second Ctrl+click
   const focusOrigRef = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({});
+  const noteDragRef = useRef<{ startX: number; startY: number; origFx: number; origFy: number; imageId: string } | null>(null);
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
 
@@ -367,10 +370,40 @@ export default function RefBoard() {
     };
   }, []);
 
-  // ── Note editing ──────────────────────────────────────────────────────────
+  // ── Note editing + dragging ──────────────────────────────��────────────────
 
   const handleNoteChange = useCallback((id: string, note: string) => {
     setImages(prev => prev.map(img => img.id === id ? { ...img, note } : img));
+  }, []);
+
+  const handleNoteDragStart = useCallback((e: React.PointerEvent, id: string) => {
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const img = imagesRef.current.find(i => i.id === id);
+    if (!img) return;
+    noteDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origFx: img.noteFx ?? 0.55,
+      origFy: img.noteFy ?? 0.55,
+      imageId: id,
+    };
+  }, []);
+
+  const handleNoteDragMove = useCallback((e: React.PointerEvent, id: string) => {
+    e.stopPropagation();
+    const op = noteDragRef.current;
+    if (!op || op.imageId !== id) return;
+    const img = imagesRef.current.find(i => i.id === id);
+    if (!img) return;
+    const newFx = Math.max(0, Math.min(0.95, op.origFx + (e.clientX - op.startX) / img.width));
+    const newFy = Math.max(0, Math.min(0.95, op.origFy + (e.clientY - op.startY) / img.height));
+    setImages(prev => prev.map(i => i.id === id ? { ...i, noteFx: newFx, noteFy: newFy } : i));
+  }, []);
+
+  const handleNoteDragEnd = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
+    noteDragRef.current = null;
   }, []);
 
   // ── Pointer move ───────────────────────────────────────────────────────────
@@ -486,6 +519,8 @@ export default function RefBoard() {
       {/* Images */}
       {images.map(img => {
         const isFocused = focusedId === img.id;
+        const noteFx = img.noteFx ?? 0.55;
+        const noteFy = img.noteFy ?? 0.55;
         return (
           <div
             key={img.id}
@@ -534,8 +569,8 @@ export default function RefBoard() {
                 onPointerDown={e => e.stopPropagation()}
                 style={{
                   position: "absolute",
-                  bottom: 16,
-                  right: 16,
+                  left: noteFx * img.width,
+                  top: noteFy * img.height,
                   width: 220,
                   display: "flex",
                   flexDirection: "column",
@@ -544,16 +579,36 @@ export default function RefBoard() {
                   zIndex: 40,
                 }}
               >
-                {/* Adhesive strip with expand toggle */}
-                <div style={{
-                  background: "#f59e0b",
-                  height: 28,
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "flex-end",
-                  paddingRight: 6,
-                }}>
+                {/* Arrow pointer extending from top-left corner */}
+                <svg
+                  width="22" height="22" viewBox="0 0 22 22"
+                  style={{
+                    position: "absolute",
+                    top: -18,
+                    left: -18,
+                    pointerEvents: "none",
+                    filter: "drop-shadow(1px 1px 2px rgba(0,0,0,0.4))",
+                  }}
+                >
+                  <polygon points="0,0 22,0 0,22" fill="#f59e0b" />
+                </svg>
+
+                {/* Adhesive strip — drag handle */}
+                <div
+                  onPointerDown={e => handleNoteDragStart(e, img.id)}
+                  onPointerMove={e => handleNoteDragMove(e, img.id)}
+                  onPointerUp={handleNoteDragEnd}
+                  style={{
+                    background: "#f59e0b",
+                    height: 28,
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    paddingRight: 6,
+                    cursor: "grab",
+                  }}
+                >
                   <button
                     onPointerDown={e => e.stopPropagation()}
                     onClick={() => setNoteMode("panel")}

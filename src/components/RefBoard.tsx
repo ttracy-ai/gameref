@@ -1,11 +1,28 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { PanelRight, StickyNote } from "lucide-react";
+import { PanelRight, StickyNote, Plus } from "lucide-react";
 
 const STORAGE_KEY = "gameref_refboard_v1";
 
 // ── Types ────────────────────────────────────────────────────────────────────
+
+const NOTE_PALETTE = [
+  { strip: "#f59e0b", body: "#fef08a" }, // amber
+  { strip: "#f472b6", body: "#fce7f3" }, // pink
+  { strip: "#60a5fa", body: "#dbeafe" }, // blue
+  { strip: "#4ade80", body: "#dcfce7" }, // green
+  { strip: "#c084fc", body: "#f3e8ff" }, // purple
+  { strip: "#fb923c", body: "#ffedd5" }, // orange
+];
+
+type ImageNote = {
+  id: string;
+  text: string;
+  fx: number; // position as fraction of image width
+  fy: number; // position as fraction of image height
+  colorIdx: number; // index into NOTE_PALETTE
+};
 
 type PlacedImage = {
   id: string;
@@ -14,9 +31,7 @@ type PlacedImage = {
   y: number;
   width: number;
   height: number;
-  note?: string;
-  noteFx?: number; // note position as fraction of image width (0–1)
-  noteFy?: number; // note position as fraction of image height (0–1)
+  notes: ImageNote[];
 };
 
 type MoveOp = {
@@ -47,6 +62,8 @@ type BoxState = {
   startX: number; startY: number;
   currentX: number; currentY: number;
 } | null;
+
+type NoteMode = "overlay" | "panel";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,8 +126,29 @@ function groupBoundsOf(imgs: PlacedImage[]) {
 }
 
 function loadFromStorage(): PlacedImage[] {
-  try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; }
-  catch { return []; }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return JSON.parse(raw).map((img: any) => {
+      // Migrate from old single-note format
+      if (!Array.isArray(img.notes)) {
+        const notes: ImageNote[] = [];
+        if (img.note) {
+          notes.push({
+            id: crypto.randomUUID(),
+            text: img.note,
+            fx: img.noteFx ?? 0.55,
+            fy: img.noteFy ?? 0.55,
+            colorIdx: 0,
+          });
+        }
+        const { note: _n, noteFx: _fx, noteFy: _fy, ...rest } = img;
+        return { ...rest, notes };
+      }
+      return img;
+    });
+  } catch { return []; }
 }
 
 function saveToStorage(images: PlacedImage[]) {
@@ -128,16 +166,20 @@ export default function RefBoard() {
   const [shiftHeld, setShiftHeld] = useState(false);
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [noteMode, setNoteMode] = useState<"postit" | "panel">("postit");
+  const [noteMode, setNoteMode] = useState<NoteMode>("overlay");
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const activeOp = useRef<ActiveOp | null>(null);
   const imagesRef = useRef(images);
   const selectedIdsRef = useRef(selectedIds);
   const focusedIdRef = useRef<string | null>(null);
-  // Stores the pre-focus position/size so we can restore on second Ctrl+click
   const focusOrigRef = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({});
-  const noteDragRef = useRef<{ startX: number; startY: number; origFx: number; origFy: number; imageId: string } | null>(null);
+  const noteDragRef = useRef<{
+    startX: number; startY: number;
+    origFx: number; origFy: number;
+    imageId: string; noteId: string;
+  } | null>(null);
+
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
 
@@ -147,7 +189,6 @@ export default function RefBoard() {
     if (!id) return;
     const imgData = imagesRef.current.find(i => i.id === id);
     if (!imgData) return;
-    // Small timeout lets the browser recompute layout before we measure the canvas
     const t = setTimeout(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -155,7 +196,6 @@ export default function RefBoard() {
       const image = new window.Image();
       image.src = imgData.src;
       const rezoom = () => {
-        // Fill the full canvas area — never upscale beyond native resolution
         let w = image.naturalWidth;
         let h = image.naturalHeight;
         if (w > rect.width || h > rect.height) {
@@ -185,7 +225,6 @@ export default function RefBoard() {
 
   useEffect(() => { setImages(loadFromStorage()); }, []);
   useEffect(() => {
-    // Save original positions for any focused image so reloads restore cleanly
     const toSave = images.map(img => {
       const orig = focusOrigRef.current[img.id];
       return orig ? { ...img, ...orig } : img;
@@ -218,14 +257,14 @@ export default function RefBoard() {
       setImages(prev => [...prev, {
         id: crypto.randomUUID(), src: finalSrc,
         x: Math.max(0, dropX - width / 2), y: Math.max(0, dropY - height / 2),
-        width, height,
+        width, height, notes: [],
       }]);
     };
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    if (activeOp.current) return; // ignore during move/resize
+    if (activeOp.current) return;
     setIsDragOver(true);
   }, []);
   const handleDragLeave = useCallback(() => setIsDragOver(false), []);
@@ -235,7 +274,7 @@ export default function RefBoard() {
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.target !== canvasRef.current) return;
     setSelectedIds(new Set());
-    if (!e.shiftKey) return; // box select requires shift
+    if (!e.shiftKey) return;
     const rect = canvasRef.current!.getBoundingClientRect();
     activeOp.current = {
       kind: "box",
@@ -249,7 +288,6 @@ export default function RefBoard() {
   const handleImagePointerDown = useCallback((e: React.PointerEvent, id: string) => {
     e.stopPropagation();
 
-    // ── Ctrl+click: zoom to fill canvas at native resolution ──────────────────
     if (e.ctrlKey) {
       setSelectedIds(new Set());
       const img = imagesRef.current.find(i => i.id === id);
@@ -257,18 +295,16 @@ export default function RefBoard() {
 
       const currentFocused = focusedIdRef.current;
 
-      // Restore any previously focused image
       if (currentFocused && currentFocused !== id) {
         const orig = focusOrigRef.current[currentFocused];
         if (orig) {
           setImages(prev => prev.map(i => i.id === currentFocused ? { ...i, ...orig } : i));
           delete focusOrigRef.current[currentFocused];
         }
-        setNoteMode("postit");
+        setNoteMode("overlay");
       }
 
       if (currentFocused === id) {
-        // Second Ctrl+click on same image → restore
         const orig = focusOrigRef.current[id];
         if (orig) {
           setImages(prev => prev.map(i => i.id === id ? { ...i, ...orig } : i));
@@ -276,16 +312,14 @@ export default function RefBoard() {
         }
         focusedIdRef.current = null;
         setFocusedId(null);
-        setNoteMode("postit");
+        setNoteMode("overlay");
         return;
       }
 
-      // First Ctrl+click → focus
       focusOrigRef.current[id] = { x: img.x, y: img.y, width: img.width, height: img.height };
       focusedIdRef.current = id;
       setFocusedId(id);
 
-      // Bring to front
       setImages(prev => {
         const target = prev.find(i => i.id === id);
         const rest = prev.filter(i => i.id !== id);
@@ -294,7 +328,6 @@ export default function RefBoard() {
 
       const canvas = canvasRef.current!;
       const rect = canvas.getBoundingClientRect();
-
       const image = new Image();
       image.src = img.src;
       image.onload = () => {
@@ -302,7 +335,6 @@ export default function RefBoard() {
         const maxH = rect.height * 0.95;
         let w = image.naturalWidth;
         let h = image.naturalHeight;
-        // Cap at canvas size, but never upscale beyond natural resolution
         if (w > maxW || h > maxH) {
           const scale = Math.min(maxW / w, maxH / h);
           w = Math.round(w * scale);
@@ -315,7 +347,6 @@ export default function RefBoard() {
       return;
     }
 
-    // ── Shift+click: toggle selection ─────────────────────────────────────────
     if (e.shiftKey) {
       setSelectedIds(prev => {
         const next = new Set(prev);
@@ -370,35 +401,55 @@ export default function RefBoard() {
     };
   }, []);
 
-  // ── Note editing + dragging ──────────────────────────────��────────────────
+  // ── Notes ─────────────────────────────────────────────────────────────────
 
-  const handleNoteChange = useCallback((id: string, note: string) => {
-    setImages(prev => prev.map(img => img.id === id ? { ...img, note } : img));
+  const addNote = useCallback((imageId: string) => {
+    setImages(prev => prev.map(img => {
+      if (img.id !== imageId) return img;
+      const colorIdx = img.notes.length % NOTE_PALETTE.length;
+      const newNote: ImageNote = {
+        id: crypto.randomUUID(),
+        text: "",
+        fx: 0.1 + (img.notes.length * 0.04),
+        fy: 0.1 + (img.notes.length * 0.04),
+        colorIdx,
+      };
+      return { ...img, notes: [...img.notes, newNote] };
+    }));
   }, []);
 
-  const handleNoteDragStart = useCallback((e: React.PointerEvent, id: string) => {
+  const handleNoteChange = useCallback((imageId: string, noteId: string, text: string) => {
+    setImages(prev => prev.map(img => img.id !== imageId ? img : {
+      ...img,
+      notes: img.notes.map(n => n.id === noteId ? { ...n, text } : n),
+    }));
+  }, []);
+
+  const handleNoteDragStart = useCallback((e: React.PointerEvent, imageId: string, noteId: string) => {
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    const img = imagesRef.current.find(i => i.id === id);
-    if (!img) return;
+    const img = imagesRef.current.find(i => i.id === imageId);
+    const note = img?.notes.find(n => n.id === noteId);
+    if (!note) return;
     noteDragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      origFx: img.noteFx ?? 0.55,
-      origFy: img.noteFy ?? 0.55,
-      imageId: id,
+      startX: e.clientX, startY: e.clientY,
+      origFx: note.fx, origFy: note.fy,
+      imageId, noteId,
     };
   }, []);
 
-  const handleNoteDragMove = useCallback((e: React.PointerEvent, id: string) => {
+  const handleNoteDragMove = useCallback((e: React.PointerEvent, imageId: string, noteId: string) => {
     e.stopPropagation();
     const op = noteDragRef.current;
-    if (!op || op.imageId !== id) return;
-    const img = imagesRef.current.find(i => i.id === id);
+    if (!op || op.imageId !== imageId || op.noteId !== noteId) return;
+    const img = imagesRef.current.find(i => i.id === imageId);
     if (!img) return;
     const newFx = Math.max(0, Math.min(0.95, op.origFx + (e.clientX - op.startX) / img.width));
     const newFy = Math.max(0, Math.min(0.95, op.origFy + (e.clientY - op.startY) / img.height));
-    setImages(prev => prev.map(i => i.id === id ? { ...i, noteFx: newFx, noteFy: newFy } : i));
+    setImages(prev => prev.map(i => i.id !== imageId ? i : {
+      ...i,
+      notes: i.notes.map(n => n.id !== noteId ? n : { ...n, fx: newFx, fy: newFy }),
+    }));
   }, []);
 
   const handleNoteDragEnd = useCallback((e: React.PointerEvent) => {
@@ -437,7 +488,6 @@ export default function RefBoard() {
       setImages(prev => prev.map(img => {
         const orig = op.origSizes[img.id];
         if (!orig) return img;
-        // Scale position relative to group origin so spacing is preserved
         return {
           ...img,
           x: Math.round(op.groupLeft + (orig.x - op.groupLeft) * scale),
@@ -473,7 +523,7 @@ export default function RefBoard() {
   const selectedImages = images.filter(img => selectedIds.has(img.id));
   const groupBounds = groupBoundsOf(selectedImages);
   const normalizedBox = boxState ? normalizeBox(boxState) : null;
-  const PAD = 6; // padding around group selection box
+  const PAD = 6;
   const focusedImage = focusedId ? images.find(i => i.id === focusedId) ?? null : null;
 
   return (
@@ -483,9 +533,7 @@ export default function RefBoard() {
       className={`relative h-full overflow-hidden transition-colors duration-150 ${
         isDragOver ? "bg-neutral-800" : "bg-neutral-900"
       }`}
-      style={{
-        flex: noteMode === "panel" && focusedId ? "2 1 0%" : "1 1 0%",
-      }}
+      style={{ flex: noteMode === "panel" && focusedId ? "2 1 0%" : "1 1 0%" }}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -519,8 +567,6 @@ export default function RefBoard() {
       {/* Images */}
       {images.map(img => {
         const isFocused = focusedId === img.id;
-        const noteFx = img.noteFx ?? 0.55;
-        const noteFy = img.noteFy ?? 0.55;
         return (
           <div
             key={img.id}
@@ -541,130 +587,161 @@ export default function RefBoard() {
               style={{ width: "100%", height: "100%", display: "block", pointerEvents: "none" }}
             />
 
-            {/* Sticky note indicator — shown when image has a note but is not focused */}
-            {!isFocused && img.note && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 6,
-                  right: 6,
-                  width: 16,
-                  height: 19,
-                  display: "flex",
-                  flexDirection: "column",
-                  boxShadow: "1px 2px 4px rgba(0,0,0,0.5)",
-                  transform: "rotate(4deg)",
-                  pointerEvents: "none",
-                  zIndex: 10,
-                }}
-              >
-                <div style={{ background: "#f59e0b", height: 5, flexShrink: 0 }} />
-                <div style={{ background: "#fef08a", flex: 1 }} />
+            {/* Note indicators — shown when not focused and image has notes */}
+            {!isFocused && img.notes.length > 0 && (
+              <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 3, pointerEvents: "none", zIndex: 10 }}>
+                {img.notes.slice(0, 4).map((note, i) => {
+                  const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
+                  return (
+                    <div
+                      key={note.id}
+                      style={{
+                        width: 13,
+                        height: 16,
+                        display: "flex",
+                        flexDirection: "column",
+                        boxShadow: "1px 2px 3px rgba(0,0,0,0.5)",
+                        transform: `rotate(${i % 2 === 0 ? 4 : -3}deg)`,
+                      }}
+                    >
+                      <div style={{ background: colors.strip, height: 4, flexShrink: 0 }} />
+                      <div style={{ background: colors.body, flex: 1 }} />
+                    </div>
+                  );
+                })}
               </div>
             )}
 
-            {/* Post-it note editor — shown only when focused in postit mode */}
-            {isFocused && noteMode === "postit" && (
-              <div
+            {/* Add note button — shown when image is focused */}
+            {isFocused && (
+              <button
                 onPointerDown={e => e.stopPropagation()}
+                onClick={() => addNote(img.id)}
+                title="Add note"
                 style={{
                   position: "absolute",
-                  left: noteFx * img.width,
-                  top: noteFy * img.height,
-                  width: 220,
+                  top: 10,
+                  right: 10,
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  background: "rgba(30,30,30,0.75)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  color: "#e5e5e5",
                   display: "flex",
-                  flexDirection: "column",
-                  boxShadow: "4px 5px 16px rgba(0,0,0,0.6), 1px 1px 4px rgba(0,0,0,0.2)",
-                  transform: "rotate(-1.5deg)",
-                  zIndex: 40,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  zIndex: 45,
+                  backdropFilter: "blur(4px)",
                 }}
               >
-                {/* Arrow pointer extending from top-left corner */}
-                <svg
-                  width="22" height="22" viewBox="0 0 22 22"
+                <Plus size={16} />
+              </button>
+            )}
+
+            {/* Overlay notes — shown when focused in overlay mode */}
+            {isFocused && noteMode === "overlay" && img.notes.map(note => {
+              const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
+              return (
+                <div
+                  key={note.id}
+                  onPointerDown={e => e.stopPropagation()}
                   style={{
                     position: "absolute",
-                    top: -18,
-                    left: -18,
-                    pointerEvents: "none",
-                    filter: "drop-shadow(1px 1px 2px rgba(0,0,0,0.4))",
-                  }}
-                >
-                  <polygon points="0,0 22,0 0,22" fill="#f59e0b" />
-                </svg>
-
-                {/* Adhesive strip — drag handle */}
-                <div
-                  onPointerDown={e => handleNoteDragStart(e, img.id)}
-                  onPointerMove={e => handleNoteDragMove(e, img.id)}
-                  onPointerUp={handleNoteDragEnd}
-                  style={{
-                    background: "#f59e0b",
-                    height: 28,
-                    flexShrink: 0,
+                    left: note.fx * img.width,
+                    top: note.fy * img.height,
+                    width: 220,
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    paddingRight: 6,
-                    cursor: "grab",
+                    flexDirection: "column",
+                    boxShadow: "4px 5px 16px rgba(0,0,0,0.6), 1px 1px 4px rgba(0,0,0,0.2)",
+                    transform: "rotate(-1.5deg)",
+                    zIndex: 40,
                   }}
                 >
-                  <button
-                    onPointerDown={e => e.stopPropagation()}
-                    onClick={() => setNoteMode("panel")}
-                    title="Expand to side panel"
+                  {/* Arrow pointer at top-left corner */}
+                  <svg
+                    width="22" height="22" viewBox="0 0 22 22"
                     style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 3,
-                      display: "flex",
-                      alignItems: "center",
-                      color: "#78350f",
-                      borderRadius: 3,
-                      opacity: 0.75,
+                      position: "absolute",
+                      top: -18, left: -18,
+                      pointerEvents: "none",
+                      filter: "drop-shadow(1px 1px 2px rgba(0,0,0,0.4))",
                     }}
                   >
-                    <PanelRight size={14} />
-                  </button>
-                </div>
+                    <polygon points="0,0 22,0 0,22" fill={colors.strip} />
+                  </svg>
 
-                {/* Note body */}
-                <div style={{ background: "#fef08a", padding: "8px 10px 26px", position: "relative" }}>
-                  <textarea
-                    autoFocus={!img.note}
-                    value={img.note ?? ""}
-                    onChange={e => handleNoteChange(img.id, e.target.value)}
-                    placeholder="Add a note…"
-                    rows={5}
+                  {/* Adhesive strip — drag handle */}
+                  <div
+                    onPointerDown={e => handleNoteDragStart(e, img.id, note.id)}
+                    onPointerMove={e => handleNoteDragMove(e, img.id, note.id)}
+                    onPointerUp={handleNoteDragEnd}
                     style={{
-                      width: "100%",
-                      background: "transparent",
-                      border: "none",
-                      outline: "none",
-                      resize: "none",
-                      fontFamily: "inherit",
-                      fontSize: 13,
-                      color: "#1c1917",
-                      lineHeight: 1.6,
-                      padding: 0,
+                      background: colors.strip,
+                      height: 28,
+                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-end",
+                      paddingRight: 6,
+                      cursor: "grab",
                     }}
-                  />
-                  {/* Folded corner */}
-                  <div style={{
-                    position: "absolute",
-                    bottom: 0,
-                    right: 0,
-                    width: 0,
-                    height: 0,
-                    borderStyle: "solid",
-                    borderWidth: "0 0 22px 22px",
-                    borderColor: "transparent transparent #171717 transparent",
-                    filter: "drop-shadow(-1px -1px 2px rgba(0,0,0,0.25))",
-                  }} />
+                  >
+                    <button
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={() => setNoteMode("panel")}
+                      title="Expand to panel"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: 3,
+                        display: "flex",
+                        alignItems: "center",
+                        color: "rgba(0,0,0,0.5)",
+                        borderRadius: 3,
+                      }}
+                    >
+                      <PanelRight size={14} />
+                    </button>
+                  </div>
+
+                  {/* Note body */}
+                  <div style={{ background: colors.body, padding: "8px 10px 26px", position: "relative" }}>
+                    <textarea
+                      autoFocus={note.text === ""}
+                      value={note.text}
+                      onChange={e => handleNoteChange(img.id, note.id, e.target.value)}
+                      placeholder="Add a note…"
+                      rows={5}
+                      style={{
+                        width: "100%",
+                        background: "transparent",
+                        border: "none",
+                        outline: "none",
+                        resize: "none",
+                        fontFamily: "inherit",
+                        fontSize: 13,
+                        color: "#1c1917",
+                        lineHeight: 1.6,
+                        padding: 0,
+                      }}
+                    />
+                    {/* Folded corner */}
+                    <div style={{
+                      position: "absolute",
+                      bottom: 0, right: 0,
+                      width: 0, height: 0,
+                      borderStyle: "solid",
+                      borderWidth: "0 0 22px 22px",
+                      borderColor: `transparent transparent #171717 transparent`,
+                      filter: "drop-shadow(-1px -1px 2px rgba(0,0,0,0.25))",
+                    }} />
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })}
           </div>
         );
       })}
@@ -683,7 +760,6 @@ export default function RefBoard() {
             zIndex: 30,
           }}
         >
-          {/* Resize handle — only visible while shift is held */}
           {shiftHeld && (
             <div
               onPointerDown={handleResizePointerDown}
@@ -703,7 +779,7 @@ export default function RefBoard() {
       )}
     </div>
 
-    {/* Notes panel — 1/3 width, shown when focused image is in panel mode */}
+    {/* Panel — 1/3 width, all notes for the focused image */}
     {noteMode === "panel" && focusedImage && (
       <div
         onPointerDown={e => e.stopPropagation()}
@@ -713,21 +789,23 @@ export default function RefBoard() {
           flexDirection: "column",
           borderLeft: "1px solid #404040",
           overflow: "hidden",
+          background: "#1a1a1a",
         }}
       >
-        {/* Amber header with back toggle */}
+        {/* Panel header */}
         <div style={{
-          background: "#f59e0b",
           height: 36,
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
-          justifyContent: "flex-end",
-          paddingRight: 10,
+          justifyContent: "space-between",
+          padding: "0 12px",
+          borderBottom: "1px solid #404040",
         }}>
+          <span style={{ fontSize: 11, color: "#737373", letterSpacing: "0.06em", fontWeight: 600 }}>NOTES</span>
           <button
-            onClick={() => setNoteMode("postit")}
-            title="Switch to post-it view"
+            onClick={() => setNoteMode("overlay")}
+            title="Switch to overlay view"
             style={{
               background: "none",
               border: "none",
@@ -735,33 +813,47 @@ export default function RefBoard() {
               padding: 4,
               display: "flex",
               alignItems: "center",
-              color: "#78350f",
+              color: "#737373",
               borderRadius: 3,
-              opacity: 0.75,
             }}
           >
-            <StickyNote size={16} />
+            <StickyNote size={15} />
           </button>
         </div>
 
-        {/* Note body */}
-        <textarea
-          value={focusedImage.note ?? ""}
-          onChange={e => handleNoteChange(focusedImage.id, e.target.value)}
-          placeholder="Add a note…"
-          style={{
-            flex: 1,
-            background: "#fef08a",
-            border: "none",
-            outline: "none",
-            resize: "none",
-            fontFamily: "inherit",
-            fontSize: 14,
-            color: "#1c1917",
-            lineHeight: 1.7,
-            padding: "14px 16px",
-          }}
-        />
+        {/* Note cards */}
+        <div style={{ flex: 1, overflow: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          {focusedImage.notes.length === 0 && (
+            <p style={{ fontSize: 12, color: "#525252", textAlign: "center", marginTop: 24 }}>
+              No notes yet. Click + to add one.
+            </p>
+          )}
+          {focusedImage.notes.map(note => {
+            const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
+            return (
+              <div key={note.id} style={{ display: "flex", flexDirection: "column", borderRadius: 2, overflow: "hidden", boxShadow: "2px 3px 8px rgba(0,0,0,0.4)" }}>
+                <div style={{ background: colors.strip, height: 18, flexShrink: 0 }} />
+                <textarea
+                  value={note.text}
+                  onChange={e => handleNoteChange(focusedImage.id, note.id, e.target.value)}
+                  placeholder="Add a note…"
+                  rows={4}
+                  style={{
+                    background: colors.body,
+                    border: "none",
+                    outline: "none",
+                    resize: "none",
+                    fontFamily: "inherit",
+                    fontSize: 13,
+                    color: "#1c1917",
+                    lineHeight: 1.6,
+                    padding: "8px 10px",
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
     )}
     </div>

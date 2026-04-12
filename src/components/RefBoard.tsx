@@ -470,17 +470,21 @@ export default function RefBoard() {
               <div
                 style={{
                   position: "absolute",
-                  top: 5,
-                  right: 5,
-                  width: 14,
-                  height: 14,
-                  background: "#fde047",
-                  clipPath: "polygon(0 0, 70% 0, 100% 30%, 100% 100%, 0 100%)",
+                  top: 6,
+                  right: 6,
+                  width: 16,
+                  height: 19,
+                  display: "flex",
+                  flexDirection: "column",
+                  boxShadow: "1px 2px 4px rgba(0,0,0,0.5)",
+                  transform: "rotate(4deg)",
                   pointerEvents: "none",
                   zIndex: 10,
-                  filter: "drop-shadow(1px 1px 1px rgba(0,0,0,0.4))",
                 }}
-              />
+              >
+                <div style={{ background: "#f59e0b", height: 5, flexShrink: 0 }} />
+                <div style={{ background: "#fef08a", flex: 1 }} />
+              </div>
             )}
 
             {/* Post-it note editor — shown only when image is focused/enlarged */}
@@ -489,41 +493,53 @@ export default function RefBoard() {
                 onPointerDown={e => e.stopPropagation()}
                 style={{
                   position: "absolute",
-                  bottom: 12,
-                  right: 12,
-                  width: 210,
-                  background: "#fef08a",
-                  borderRadius: 2,
-                  boxShadow: "2px 4px 10px rgba(0,0,0,0.5)",
-                  padding: "8px 10px 10px",
-                  zIndex: 40,
+                  bottom: 16,
+                  right: 16,
+                  width: 220,
                   display: "flex",
                   flexDirection: "column",
-                  gap: 4,
+                  boxShadow: "4px 5px 16px rgba(0,0,0,0.6), 1px 1px 4px rgba(0,0,0,0.2)",
+                  transform: "rotate(-1.5deg)",
+                  zIndex: 40,
                 }}
               >
-                <span style={{ fontSize: 10, color: "#92400e", fontWeight: 600, letterSpacing: "0.05em", userSelect: "none" }}>
-                  NOTE
-                </span>
-                <textarea
-                  autoFocus={!img.note}
-                  value={img.note ?? ""}
-                  onChange={e => handleNoteChange(img.id, e.target.value)}
-                  placeholder="Add a note…"
-                  rows={5}
-                  style={{
-                    width: "100%",
-                    background: "transparent",
-                    border: "none",
-                    outline: "none",
-                    resize: "vertical",
-                    fontFamily: "inherit",
-                    fontSize: 13,
-                    color: "#1c1917",
-                    lineHeight: 1.5,
-                    padding: 0,
-                  }}
-                />
+                {/* Adhesive strip */}
+                <div style={{ background: "#f59e0b", height: 22, flexShrink: 0 }} />
+
+                {/* Note body */}
+                <div style={{ background: "#fef08a", padding: "8px 10px 26px", position: "relative" }}>
+                  <textarea
+                    autoFocus={!img.note}
+                    value={img.note ?? ""}
+                    onChange={e => handleNoteChange(img.id, e.target.value)}
+                    placeholder="Add a note…"
+                    rows={5}
+                    style={{
+                      width: "100%",
+                      background: "transparent",
+                      border: "none",
+                      outline: "none",
+                      resize: "none",
+                      fontFamily: "inherit",
+                      fontSize: 13,
+                      color: "#1c1917",
+                      lineHeight: 1.6,
+                      padding: 0,
+                    }}
+                  />
+                  {/* Folded corner */}
+                  <div style={{
+                    position: "absolute",
+                    bottom: 0,
+                    right: 0,
+                    width: 0,
+                    height: 0,
+                    borderStyle: "solid",
+                    borderWidth: "0 0 22px 22px",
+                    borderColor: "transparent transparent #171717 transparent",
+                    filter: "drop-shadow(-1px -1px 2px rgba(0,0,0,0.25))",
+                  }} />
+                </div>
               </div>
             )}
           </div>

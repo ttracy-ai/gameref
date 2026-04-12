@@ -418,6 +418,7 @@ export default function RefBoard() {
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onContextMenu={e => e.preventDefault()}
     >
       {/* Empty state */}
       {images.length === 0 && (

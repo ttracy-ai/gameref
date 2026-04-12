@@ -13,6 +13,7 @@ type PlacedImage = {
   y: number;
   width: number;
   height: number;
+  note?: string;
 };
 
 type MoveOp = {
@@ -330,6 +331,12 @@ export default function RefBoard() {
     };
   }, []);
 
+  // ── Note editing ──────────────────────────────────────────────────────────
+
+  const handleNoteChange = useCallback((id: string, note: string) => {
+    setImages(prev => prev.map(img => img.id === id ? { ...img, note } : img));
+  }, []);
+
   // ── Pointer move ───────────────────────────────────────────────────────────
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
@@ -435,27 +442,92 @@ export default function RefBoard() {
       )}
 
       {/* Images */}
-      {images.map(img => (
-        <div
-          key={img.id}
-          onPointerDown={e => handleImagePointerDown(e, img.id)}
-          style={{
-            position: "absolute",
-            left: img.x, top: img.y,
-            width: img.width, height: img.height,
-            cursor: "grab",
-            touchAction: "none",
-            userSelect: "none",
-          }}
-        >
-          <img
-            src={img.src}
-            alt=""
-            draggable={false}
-            style={{ width: "100%", height: "100%", display: "block", pointerEvents: "none" }}
-          />
-        </div>
-      ))}
+      {images.map(img => {
+        const isFocused = focusedId === img.id;
+        return (
+          <div
+            key={img.id}
+            onPointerDown={e => handleImagePointerDown(e, img.id)}
+            style={{
+              position: "absolute",
+              left: img.x, top: img.y,
+              width: img.width, height: img.height,
+              cursor: "grab",
+              touchAction: "none",
+              userSelect: "none",
+            }}
+          >
+            <img
+              src={img.src}
+              alt=""
+              draggable={false}
+              style={{ width: "100%", height: "100%", display: "block", pointerEvents: "none" }}
+            />
+
+            {/* Sticky note indicator — shown when image has a note but is not focused */}
+            {!isFocused && img.note && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 5,
+                  right: 5,
+                  width: 14,
+                  height: 14,
+                  background: "#fde047",
+                  clipPath: "polygon(0 0, 70% 0, 100% 30%, 100% 100%, 0 100%)",
+                  pointerEvents: "none",
+                  zIndex: 10,
+                  filter: "drop-shadow(1px 1px 1px rgba(0,0,0,0.4))",
+                }}
+              />
+            )}
+
+            {/* Post-it note editor — shown only when image is focused/enlarged */}
+            {isFocused && (
+              <div
+                onPointerDown={e => e.stopPropagation()}
+                style={{
+                  position: "absolute",
+                  bottom: 12,
+                  right: 12,
+                  width: 210,
+                  background: "#fef08a",
+                  borderRadius: 2,
+                  boxShadow: "2px 4px 10px rgba(0,0,0,0.5)",
+                  padding: "8px 10px 10px",
+                  zIndex: 40,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
+              >
+                <span style={{ fontSize: 10, color: "#92400e", fontWeight: 600, letterSpacing: "0.05em", userSelect: "none" }}>
+                  NOTE
+                </span>
+                <textarea
+                  autoFocus={!img.note}
+                  value={img.note ?? ""}
+                  onChange={e => handleNoteChange(img.id, e.target.value)}
+                  placeholder="Add a note…"
+                  rows={5}
+                  style={{
+                    width: "100%",
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    resize: "vertical",
+                    fontFamily: "inherit",
+                    fontSize: 13,
+                    color: "#1c1917",
+                    lineHeight: 1.5,
+                    padding: 0,
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       {/* Group selection box + single resize handle */}
       {groupBounds && (

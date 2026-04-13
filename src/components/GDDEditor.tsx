@@ -278,12 +278,12 @@ export default function GDDEditor() {
     if (!editor || hasLoaded.current) return;
     hasLoaded.current = true;
     const loaded = loadData();
-    const activePage = loaded.pages.find(p => p.id === loaded.activeId);
+    const homePage = loaded.pages.find(p => p.id === "home");
     isSwitching.current = true;
-    editor.commands.setContent(activePage?.content ?? "");
+    editor.commands.setContent(homePage?.content ?? "");
     requestAnimationFrame(() => { isSwitching.current = false; });
     setPages(loaded.pages);
-    setActiveId(loaded.activeId);
+    setActiveId("home");
   }, [editor]);
 
   // Intercept clicks on internal page links

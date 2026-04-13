@@ -1,10 +1,11 @@
 "use client";
 
-import { ScrollText, Images, ChevronLeft, ChevronRight } from "lucide-react";
+import { ScrollText, Images, ChevronLeft, ChevronRight, BarChart2 } from "lucide-react";
 import { useState } from "react";
 
 import RefBoard from "@/components/RefBoard";
 import GDDEditor from "@/components/GDDEditor";
+import ProgressBoard from "@/components/ProgressBoard";
 
 type RibbonItem = {
   id: string;
@@ -13,6 +14,11 @@ type RibbonItem = {
 };
 
 const ribbonItems: RibbonItem[] = [
+  {
+    id: "progress",
+    icon: <BarChart2 size={22} />,
+    label: "Progress",
+  },
   {
     id: "gdd",
     icon: <ScrollText size={22} />,
@@ -94,7 +100,9 @@ export default function CanvasPage() {
       </aside>
 
       {/* Main area */}
-      {active === "refboard" ? (
+      {active === "progress" ? (
+        <ProgressBoard />
+      ) : active === "refboard" ? (
         <RefBoard
           pendingFocusId={pendingFocusId}
           onFocusConsumed={() => setPendingFocusId(null)}

@@ -5,7 +5,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Mark, mergeAttributes } from "@tiptap/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Heading1, Heading2, Heading3, List, ListOrdered, Minus,
@@ -63,6 +63,44 @@ function loadData(): GDDData {
 function saveData(data: GDDData) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
   catch { console.warn("GameRef: localStorage full — GDD may not persist."); }
+}
+
+// ── Breadcrumb helpers ────────────────────────────────────────────────────────
+
+/** Pull every data-page-id value out of a page's saved HTML. */
+function extractLinkedIds(html: string): string[] {
+  const ids: string[] = [];
+  const re = /data-page-id="([^"]+)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) ids.push(m[1]);
+  return [...new Set(ids)];
+}
+
+/**
+ * BFS from `fromId` through the page link graph to find the shortest path
+ * to `toId`. Returns the full path (including both endpoints) or null if
+ * the target is unreachable.
+ */
+function findBreadcrumbPath(pages: GDDPage[], fromId: string, toId: string): string[] | null {
+  if (fromId === toId) return [fromId];
+
+  const adj: Record<string, string[]> = {};
+  for (const p of pages) adj[p.id] = extractLinkedIds(p.content);
+
+  const queue: Array<{ id: string; path: string[] }> = [{ id: fromId, path: [fromId] }];
+  const visited = new Set([fromId]);
+
+  while (queue.length) {
+    const { id, path } = queue.shift()!;
+    for (const nextId of adj[id] ?? []) {
+      if (nextId === toId) return [...path, nextId];
+      if (!visited.has(nextId)) {
+        visited.add(nextId);
+        queue.push({ id: nextId, path: [...path, nextId] });
+      }
+    }
+  }
+  return null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -352,6 +390,14 @@ export default function GDDEditor() {
     setPickerPos({ x: e.clientX, y: e.clientY });
   };
 
+  // ── Breadcrumbs ─────────────────────────────────────────────────────────────
+
+  // BFS from Home each time pages or activeId changes. Null = unreachable/Home.
+  const breadcrumbPath = useMemo(() => {
+    if (activeId === "home") return null;
+    return findBreadcrumbPath(pages, "home", activeId);
+  }, [pages, activeId]);
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (!editor) return null;
@@ -484,6 +530,48 @@ export default function GDDEditor() {
           )}
         </div>
       </div>
+
+      {/* Breadcrumbs */}
+      {breadcrumbPath && breadcrumbPath.length > 1 && (
+        <div style={{
+          flexShrink: 0,
+          borderBottom: "1px solid #1f1f1f",
+          background: "#171717",
+        }}>
+          <div style={{
+            maxWidth: 760, margin: "0 auto", padding: "0 32px",
+            height: 30, display: "flex", alignItems: "center", gap: 4,
+          }}>
+            {breadcrumbPath.map((id, i) => {
+              const page = pages.find(p => p.id === id);
+              const isLast = i === breadcrumbPath.length - 1;
+              return (
+                <span key={id} style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                  {i > 0 && (
+                    <span style={{ color: "#303030", fontSize: 11, flexShrink: 0 }}>›</span>
+                  )}
+                  {isLast ? (
+                    <span style={{ fontSize: 12, color: "#4a4a4a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {page?.title}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => switchPage(id)}
+                      style={{
+                        fontSize: 12, background: "none", border: "none",
+                        cursor: "pointer", color: "#525252", padding: 0,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}
+                    >
+                      {page?.title}
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Editor content */}
       <div

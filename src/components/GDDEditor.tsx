@@ -52,7 +52,8 @@ function ImageRefNodeView({ node, updateAttributes, deleteNode }: NodeViewProps)
   const { onImageRefClick } = useContext(GDDImageContext);
   const imageId: string  = node.attrs.imageId;
   const imgHeight: number = node.attrs.imgHeight ?? 0;
-  const [thumb, setThumb] = useState<string | null>(null);
+  const [thumb, setThumb]           = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     try {
@@ -112,9 +113,21 @@ function ImageRefNodeView({ node, updateAttributes, deleteNode }: NodeViewProps)
           <button onClick={() => updateAttributes({ imgHeight: 200 })} title="Expand image" style={btnStyle}>
             <Maximize2 size={11} />
           </button>
-          <button onClick={() => deleteNode()} title="Remove reference" style={{ ...btnStyle, color: "#6b2222" }}>
-            <X size={11} />
-          </button>
+          {confirmDelete ? (
+            <>
+              <span style={{ fontSize: 10.5, color: "#f87171", whiteSpace: "nowrap" }}>Remove?</span>
+              <button onClick={() => deleteNode()} style={{ ...btnStyle, color: "#f87171" }} title="Yes, remove">
+                <Check size={11} />
+              </button>
+              <button onClick={() => setConfirmDelete(false)} style={btnStyle} title="Cancel">
+                <X size={11} />
+              </button>
+            </>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} title="Remove reference" style={{ ...btnStyle, color: "#6b2222" }}>
+              <X size={11} />
+            </button>
+          )}
         </div>
       </NodeViewWrapper>
     );
@@ -145,9 +158,21 @@ function ImageRefNodeView({ node, updateAttributes, deleteNode }: NodeViewProps)
             <button onClick={() => onImageRefClick(imageId)} title="Open in Reference Board" style={btnStyle}>
               <ExternalLink size={12} />
             </button>
-            <button onClick={() => deleteNode()} title="Remove reference" style={{ ...btnStyle, color: "#6b2222" }}>
-              <X size={12} />
-            </button>
+            {confirmDelete ? (
+              <>
+                <span style={{ fontSize: 10.5, color: "#f87171", whiteSpace: "nowrap" }}>Remove?</span>
+                <button onClick={() => deleteNode()} style={{ ...btnStyle, color: "#f87171" }} title="Yes, remove">
+                  <Check size={12} />
+                </button>
+                <button onClick={() => setConfirmDelete(false)} style={btnStyle} title="Cancel">
+                  <X size={12} />
+                </button>
+              </>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} title="Remove reference" style={{ ...btnStyle, color: "#6b2222" }}>
+                <X size={12} />
+              </button>
+            )}
           </div>
         </div>
 

@@ -48,7 +48,7 @@ const GDDImageContext = createContext<{ onImageRefClick: (id: string) => void }>
 });
 
 // NodeView: chip when imgHeight === 0, resizable card otherwise
-function ImageRefNodeView({ node, updateAttributes }: NodeViewProps) {
+function ImageRefNodeView({ node, updateAttributes, deleteNode }: NodeViewProps) {
   const { onImageRefClick } = useContext(GDDImageContext);
   const imageId: string  = node.attrs.imageId;
   const imgHeight: number = node.attrs.imgHeight ?? 0;
@@ -112,6 +112,9 @@ function ImageRefNodeView({ node, updateAttributes }: NodeViewProps) {
           <button onClick={() => updateAttributes({ imgHeight: 200 })} title="Expand image" style={btnStyle}>
             <Maximize2 size={11} />
           </button>
+          <button onClick={() => deleteNode()} title="Remove reference" style={{ ...btnStyle, color: "#6b2222" }}>
+            <X size={11} />
+          </button>
         </div>
       </NodeViewWrapper>
     );
@@ -141,6 +144,9 @@ function ImageRefNodeView({ node, updateAttributes }: NodeViewProps) {
             </button>
             <button onClick={() => onImageRefClick(imageId)} title="Open in Reference Board" style={btnStyle}>
               <ExternalLink size={12} />
+            </button>
+            <button onClick={() => deleteNode()} title="Remove reference" style={{ ...btnStyle, color: "#6b2222" }}>
+              <X size={12} />
             </button>
           </div>
         </div>

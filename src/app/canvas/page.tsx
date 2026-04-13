@@ -2,6 +2,7 @@
 
 import { ScrollText, Images, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
+
 import RefBoard from "@/components/RefBoard";
 import GDDEditor from "@/components/GDDEditor";
 
@@ -27,6 +28,12 @@ const ribbonItems: RibbonItem[] = [
 export default function CanvasPage() {
   const [active, setActive] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+
+  const handleImageRefClick = (imageId: string) => {
+    setPendingFocusId(imageId);
+    setActive("refboard");
+  };
 
   return (
     <div className="flex w-screen h-screen overflow-hidden bg-neutral-900">
@@ -88,9 +95,12 @@ export default function CanvasPage() {
 
       {/* Main area */}
       {active === "refboard" ? (
-        <RefBoard />
+        <RefBoard
+          pendingFocusId={pendingFocusId}
+          onFocusConsumed={() => setPendingFocusId(null)}
+        />
       ) : active === "gdd" ? (
-        <GDDEditor />
+        <GDDEditor onImageRefClick={handleImageRefClick} />
       ) : (
         <main className="flex-1 flex items-center justify-center text-neutral-600 select-none text-sm">
           Select a tool to get started

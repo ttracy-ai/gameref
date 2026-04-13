@@ -1,15 +1,17 @@
 "use client";
 
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Mark, mergeAttributes } from "@tiptap/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Mark, Node as TipTapNode, mergeAttributes } from "@tiptap/core";
+import type { NodeViewProps } from "@tiptap/core";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Heading1, Heading2, Heading3, List, ListOrdered, Minus,
   ChevronDown, Plus, X, Check, Pencil, Link2, Link2Off,
+  Image as ImageIcon, ExternalLink,
 } from "lucide-react";
 
 const STORAGE_KEY = "gameref_gdd_v1";
@@ -36,6 +38,147 @@ const PageLink = Mark.create({
     return ["span", mergeAttributes({ class: "gdd-page-link" }, HTMLAttributes), 0];
   },
 });
+
+// ── Image reference system ────────────────────────────────────────────────────
+
+// Context lets the NodeView call back to the GDDEditor without prop-drilling
+// through TipTap's extension machinery.
+const GDDImageContext = createContext<{ onImageRefClick: (id: string) => void }>({
+  onImageRefClick: () => {},
+});
+
+// NodeView rendered inside TipTap — shows a small thumbnail chip
+function ImageRefNodeView({ node }: NodeViewProps) {
+  const { onImageRefClick } = useContext(GDDImageContext);
+  const imageId: string = node.attrs.imageId;
+  const [thumb, setThumb] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("gameref_refboard_v1");
+      if (!raw) return;
+      const imgs = JSON.parse(raw) as Array<{ id: string; src: string }>;
+      const found = imgs.find(i => i.id === imageId);
+      if (found) setThumb(found.src);
+    } catch {}
+  }, [imageId]);
+
+  return (
+    <NodeViewWrapper as="span" style={{ display: "inline-block", verticalAlign: "middle", lineHeight: 1 }}>
+      <span
+        contentEditable={false}
+        onClick={() => onImageRefClick(imageId)}
+        title="Open in Reference Board"
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          background: "#1e1e1e", border: "1px solid #333", borderRadius: 5,
+          padding: "2px 8px 2px 3px", cursor: "pointer", userSelect: "none",
+          verticalAlign: "middle", transition: "border-color 0.15s",
+        }}
+      >
+        {thumb ? (
+          <img src={thumb} style={{ height: 26, width: "auto", maxWidth: 40, objectFit: "cover", borderRadius: 3, display: "block" }} />
+        ) : (
+          <div style={{ width: 26, height: 26, background: "#2a2a2a", borderRadius: 3, flexShrink: 0 }} />
+        )}
+        <span style={{ fontSize: 11, color: "#7dd3fc", whiteSpace: "nowrap" }}>Ref Board</span>
+        <ExternalLink size={10} style={{ color: "#404040", flexShrink: 0 }} />
+      </span>
+    </NodeViewWrapper>
+  );
+}
+
+// Inline atom node — stored as <span data-image-id="...">
+const ImageRef = TipTapNode.create({
+  name: "imageRef",
+  group: "inline",
+  inline: true,
+  atom: true,
+
+  addAttributes() {
+    return {
+      imageId: {
+        default: null,
+        parseHTML: el => el.getAttribute("data-image-id"),
+        renderHTML: attrs => ({ "data-image-id": attrs.imageId }),
+      },
+    };
+  },
+
+  parseHTML() { return [{ tag: "span[data-image-id]" }]; },
+
+  renderHTML({ HTMLAttributes }) {
+    return ["span", mergeAttributes({ class: "gdd-image-ref" }, HTMLAttributes)];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageRefNodeView);
+  },
+});
+
+// Picker popup — reads from RefBoard's localStorage, shows thumbnails
+function ImagePicker({ pos, onSelect, onClose }: {
+  pos: { x: number; y: number };
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [images, setImages] = useState<Array<{ id: string; src: string }>>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("gameref_refboard_v1");
+      if (raw) setImages(JSON.parse(raw));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const clamped = clampToViewport(pos.x, pos.y, 304, 360);
+
+  return (
+    <div
+      ref={ref}
+      onMouseDown={e => e.preventDefault()}
+      style={{
+        position: "fixed", left: clamped.x, top: clamped.y, zIndex: 300,
+        width: 304, background: "#1e1e1e", border: "1px solid #333",
+        borderRadius: 7, boxShadow: "0 8px 28px rgba(0,0,0,0.6)", overflow: "hidden",
+      }}
+    >
+      <div style={{ padding: "7px 12px 5px", fontSize: 10.5, color: "#525252", letterSpacing: "0.07em", fontWeight: 600 }}>
+        INSERT IMAGE REFERENCE
+      </div>
+      {images.length === 0 ? (
+        <div style={{ padding: "4px 12px 12px", fontSize: 12, color: "#404040" }}>
+          No images on the Reference Board yet.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, padding: "4px 10px 10px" }}>
+          {images.map(img => (
+            <button
+              key={img.id}
+              onClick={() => onSelect(img.id)}
+              style={{
+                padding: 0, background: "#2a2a2a", border: "1px solid #333",
+                borderRadius: 5, cursor: "pointer", overflow: "hidden",
+                transition: "border-color 0.15s",
+              }}
+            >
+              <img src={img.src} style={{ width: "100%", height: 62, objectFit: "cover", display: "block" }} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -218,13 +361,16 @@ function PagePicker({ pos, pages, currentId, onSelect, onUnlink, canUnlink, onCl
 
 // ── Editor ────────────────────────────────────────────────────────────────────
 
-export default function GDDEditor() {
+export default function GDDEditor({ onImageRefClick }: {
+  onImageRefClick?: (imageId: string) => void;
+}) {
   const [pages, setPages]         = useState<GDDPage[]>(() => defaultData().pages);
   const [activeId, setActiveId]   = useState<string>("home");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [renamingId, setRenamingId]     = useState<string | null>(null);
   const [renameValue, setRenameValue]   = useState("");
   const [pickerPos, setPickerPos]       = useState<{ x: number; y: number } | null>(null);
+  const [imgPickerPos, setImgPickerPos] = useState<{ x: number; y: number } | null>(null);
 
   const activeIdRef    = useRef(activeId);
   const pagesRef       = useRef(pages);
@@ -233,6 +379,7 @@ export default function GDDEditor() {
   const dropdownRef    = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const linkBtnRef     = useRef<HTMLButtonElement>(null);
+  const imgBtnRef      = useRef<HTMLButtonElement>(null);
 
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   useEffect(() => { pagesRef.current = pages; }, [pages]);
@@ -245,6 +392,7 @@ export default function GDDEditor() {
       Underline,
       Placeholder.configure({ placeholder: "Start writing…" }),
       PageLink,
+      ImageRef,
     ],
     content: "",
     onUpdate({ editor }) {
@@ -383,6 +531,17 @@ export default function GDDEditor() {
     setPickerPos(null);
   };
 
+  const openImagePicker = () => {
+    const rect = imgBtnRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setImgPickerPos({ x: rect.left, y: rect.bottom + 6 });
+  };
+
+  const insertImageRef = (imageId: string) => {
+    editor?.chain().focus().insertContent({ type: "imageRef", attrs: { imageId } }).run();
+    setImgPickerPos(null);
+  };
+
   // Right-click on editor: open page picker when text is selected
   const handleEditorContextMenu = (e: React.MouseEvent) => {
     if (!editor || editor.state.selection.empty) return;
@@ -409,6 +568,7 @@ export default function GDDEditor() {
   const linkBtnDisabled = !hasSelection && !isLinked;
 
   return (
+    <GDDImageContext.Provider value={{ onImageRefClick: onImageRefClick ?? (() => {}) }}>
     <div style={{ display: "flex", flexDirection: "column", flex: 1, height: "100%", overflow: "hidden", background: "#171717" }}>
 
       {/* Toolbar */}
@@ -451,6 +611,23 @@ export default function GDDEditor() {
           }}
         >
           <Link2 size={15} />
+        </button>
+
+        <Divider />
+
+        {/* Insert image reference */}
+        <button
+          ref={imgBtnRef}
+          onMouseDown={e => { e.preventDefault(); openImagePicker(); }}
+          title="Insert Reference Board image"
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 30, height: 30, borderRadius: 4, border: "none",
+            cursor: "pointer", background: "transparent", color: "#737373",
+            transition: "background 0.1s, color 0.1s",
+          }}
+        >
+          <ImageIcon size={15} />
         </button>
 
         {/* Spacer */}
@@ -596,6 +773,15 @@ export default function GDDEditor() {
         />
       )}
 
+      {/* Image picker popup */}
+      {imgPickerPos && (
+        <ImagePicker
+          pos={imgPickerPos}
+          onSelect={insertImageRef}
+          onClose={() => setImgPickerPos(null)}
+        />
+      )}
+
       <style>{`
         .gdd-editor {
           outline: none; color: #d4d4d4; font-family: inherit;
@@ -641,5 +827,6 @@ export default function GDDEditor() {
         }
       `}</style>
     </div>
+    </GDDImageContext.Provider>
   );
 }

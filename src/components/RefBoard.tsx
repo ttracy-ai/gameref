@@ -211,12 +211,18 @@ function GrowTextarea({
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function RefBoard() {
+type RefBoardProps = {
+  pendingFocusId?: string | null;
+  onFocusConsumed?: () => void;
+};
+
+export default function RefBoard({ pendingFocusId, onFocusConsumed }: RefBoardProps) {
   const [images, setImages] = useState<PlacedImage[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [boxState, setBoxState] = useState<BoxState>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [shiftHeld, setShiftHeld] = useState(false);
+  const [imagesLoaded, setImagesLoaded] = useState(false);
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [noteMode, setNoteMode] = useState<NoteMode>("overlay");
@@ -277,7 +283,7 @@ export default function RefBoard() {
 
   // ── Persistence ────────────────────────────────────────────────────────────
 
-  useEffect(() => { setImages(loadFromStorage()); }, []);
+  useEffect(() => { setImages(loadFromStorage()); setImagesLoaded(true); }, []);
   useEffect(() => {
     const toSave = images.map(img => {
       const orig = focusOrigRef.current[img.id];
@@ -285,6 +291,68 @@ export default function RefBoard() {
     });
     saveToStorage(toSave);
   }, [images]);
+
+  // ── Focus image programmatically (used by GDD image refs) ─────────────────
+
+  const focusImageById = useCallback((id: string) => {
+    const img = imagesRef.current.find(i => i.id === id);
+    if (!img) return;
+
+    // Restore any previously focused image
+    const currentFocused = focusedIdRef.current;
+    if (currentFocused && currentFocused !== id) {
+      const orig = focusOrigRef.current[currentFocused];
+      if (orig) {
+        setImages(prev => prev.map(i => i.id === currentFocused ? { ...i, ...orig } : i));
+        delete focusOrigRef.current[currentFocused];
+      }
+      setNoteMode("overlay");
+    }
+
+    focusOrigRef.current[id] = { x: img.x, y: img.y, width: img.width, height: img.height };
+    focusedIdRef.current = id;
+    setFocusedId(id);
+    setSelectedIds(new Set());
+
+    // Bring to front
+    setImages(prev => {
+      const target = prev.find(i => i.id === id);
+      const rest = prev.filter(i => i.id !== id);
+      return target ? [...rest, target] : prev;
+    });
+
+    // Zoom to near-native resolution
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const image = new window.Image();
+    image.src = img.src;
+    const zoom = () => {
+      const maxW = rect.width * 0.95;
+      const maxH = rect.height * 0.95;
+      let w = image.naturalWidth;
+      let h = image.naturalHeight;
+      if (w > maxW || h > maxH) {
+        const scale = Math.min(maxW / w, maxH / h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const x = Math.round((rect.width - w) / 2);
+      const y = Math.round((rect.height - h) / 2);
+      setImages(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
+    };
+    if (image.complete) zoom(); else image.onload = zoom;
+  }, []);
+
+  // Trigger focus when navigated here from GDD
+  useEffect(() => {
+    if (!pendingFocusId || !imagesLoaded) return;
+    const t = setTimeout(() => {
+      focusImageById(pendingFocusId);
+      onFocusConsumed?.();
+    }, 80);
+    return () => clearTimeout(t);
+  }, [pendingFocusId, imagesLoaded, focusImageById, onFocusConsumed]);
 
   // ── Drop from Chrome ───────────────────────────────────────────────────────
 
@@ -344,21 +412,8 @@ export default function RefBoard() {
 
     if (e.ctrlKey) {
       setSelectedIds(new Set());
-      const img = imagesRef.current.find(i => i.id === id);
-      if (!img) return;
-
-      const currentFocused = focusedIdRef.current;
-
-      if (currentFocused && currentFocused !== id) {
-        const orig = focusOrigRef.current[currentFocused];
-        if (orig) {
-          setImages(prev => prev.map(i => i.id === currentFocused ? { ...i, ...orig } : i));
-          delete focusOrigRef.current[currentFocused];
-        }
-        setNoteMode("overlay");
-      }
-
-      if (currentFocused === id) {
+      // Toggle off if already focused; otherwise focus
+      if (focusedIdRef.current === id) {
         const orig = focusOrigRef.current[id];
         if (orig) {
           setImages(prev => prev.map(i => i.id === id ? { ...i, ...orig } : i));
@@ -367,37 +422,9 @@ export default function RefBoard() {
         focusedIdRef.current = null;
         setFocusedId(null);
         setNoteMode("overlay");
-        return;
+      } else {
+        focusImageById(id);
       }
-
-      focusOrigRef.current[id] = { x: img.x, y: img.y, width: img.width, height: img.height };
-      focusedIdRef.current = id;
-      setFocusedId(id);
-
-      setImages(prev => {
-        const target = prev.find(i => i.id === id);
-        const rest = prev.filter(i => i.id !== id);
-        return target ? [...rest, target] : prev;
-      });
-
-      const canvas = canvasRef.current!;
-      const rect = canvas.getBoundingClientRect();
-      const image = new Image();
-      image.src = img.src;
-      image.onload = () => {
-        const maxW = rect.width * 0.95;
-        const maxH = rect.height * 0.95;
-        let w = image.naturalWidth;
-        let h = image.naturalHeight;
-        if (w > maxW || h > maxH) {
-          const scale = Math.min(maxW / w, maxH / h);
-          w = Math.round(w * scale);
-          h = Math.round(h * scale);
-        }
-        const x = Math.round((rect.width - w) / 2);
-        const y = Math.round((rect.height - h) / 2);
-        setImages(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
-      };
       return;
     }
 

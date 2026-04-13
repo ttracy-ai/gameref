@@ -4,27 +4,21 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Placeholder from "@tiptap/extension-placeholder";
+import Link from "@tiptap/extension-link";
 import { useEffect, useRef, useState } from "react";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Heading1, Heading2, Heading3, List, ListOrdered, Minus,
-  ChevronDown, Plus, X, Check, Pencil,
+  ChevronDown, Plus, X, Check, Pencil, Link2, Link2Off,
 } from "lucide-react";
 
 const STORAGE_KEY = "gameref_gdd_v1";
+const GDD_SCHEME = "gdd-page://";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type GDDPage = {
-  id: string;
-  title: string;
-  content: string;
-};
-
-type GDDData = {
-  pages: GDDPage[];
-  activeId: string;
-};
+type GDDPage = { id: string; title: string; content: string };
+type GDDData  = { pages: GDDPage[]; activeId: string };
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
@@ -37,12 +31,8 @@ function loadData(): GDDData {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultData();
     const parsed = JSON.parse(raw);
-    // Migrate from old single-string format
     if (!parsed.pages) {
-      return {
-        pages: [{ id: "home", title: "Home", content: typeof parsed === "string" ? parsed : "" }],
-        activeId: "home",
-      };
+      return { pages: [{ id: "home", title: "Home", content: typeof parsed === "string" ? parsed : "" }], activeId: "home" };
     }
     return parsed as GDDData;
   } catch { return defaultData(); }
@@ -53,25 +43,32 @@ function saveData(data: GDDData) {
   catch { console.warn("GameRef: localStorage full — GDD may not persist."); }
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Keep a popup within the viewport. width/height are rough estimates. */
+function clampToViewport(x: number, y: number, w = 210, h = 260) {
+  return {
+    x: Math.min(x, window.innerWidth  - w - 8),
+    y: Math.min(y, window.innerHeight - h - 8),
+  };
+}
+
 // ── Toolbar button ────────────────────────────────────────────────────────────
 
-function ToolBtn({
-  onClick, active, title, children,
-}: {
-  onClick: () => void;
-  active?: boolean;
-  title: string;
-  children: React.ReactNode;
+function ToolBtn({ onClick, active, disabled, title, children }: {
+  onClick: () => void; active?: boolean; disabled?: boolean;
+  title: string; children: React.ReactNode;
 }) {
   return (
     <button
-      onMouseDown={e => { e.preventDefault(); onClick(); }}
+      onMouseDown={e => { e.preventDefault(); if (!disabled) onClick(); }}
       title={title}
       style={{
         display: "flex", alignItems: "center", justifyContent: "center",
-        width: 30, height: 30, borderRadius: 4, border: "none", cursor: "pointer",
+        width: 30, height: 30, borderRadius: 4, border: "none",
+        cursor: disabled ? "default" : "pointer",
         background: active ? "rgba(255,255,255,0.12)" : "transparent",
-        color: active ? "#e5e5e5" : "#737373",
+        color: disabled ? "#404040" : active ? "#e5e5e5" : "#737373",
         transition: "background 0.1s, color 0.1s",
       }}
     >
@@ -84,21 +81,98 @@ function Divider() {
   return <div style={{ width: 1, height: 18, background: "#404040", margin: "0 4px", flexShrink: 0 }} />;
 }
 
+// ── Page picker popup ─────────────────────────────────────────────────────────
+
+function PagePicker({ pos, pages, currentId, onSelect, onUnlink, canUnlink, onClose }: {
+  pos: { x: number; y: number };
+  pages: GDDPage[];
+  currentId: string;
+  onSelect: (id: string) => void;
+  onUnlink: () => void;
+  canUnlink: boolean;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const others = pages.filter(p => p.id !== currentId);
+
+  // Close on outside mousedown
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const clamped = clampToViewport(pos.x, pos.y);
+
+  const rowStyle: React.CSSProperties = {
+    display: "flex", alignItems: "center", width: "100%",
+    padding: "0 12px", height: 32, background: "none", border: "none",
+    cursor: "pointer", color: "#c4c4c4", fontSize: 13, textAlign: "left",
+    gap: 8,
+  };
+
+  return (
+    <div
+      ref={ref}
+      onMouseDown={e => e.preventDefault()}
+      style={{
+        position: "fixed", left: clamped.x, top: clamped.y, zIndex: 300,
+        minWidth: 200, background: "#1e1e1e", border: "1px solid #333",
+        borderRadius: 7, boxShadow: "0 8px 28px rgba(0,0,0,0.6)",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ padding: "7px 12px 5px", fontSize: 10.5, color: "#525252", letterSpacing: "0.07em", fontWeight: 600 }}>
+        LINK TO PAGE
+      </div>
+
+      {others.length === 0 ? (
+        <div style={{ padding: "4px 12px 10px", fontSize: 12, color: "#404040" }}>
+          No other pages yet.
+        </div>
+      ) : (
+        <div style={{ paddingBottom: 4 }}>
+          {others.map(page => (
+            <button key={page.id} style={rowStyle} onClick={() => onSelect(page.id)}>
+              <Link2 size={13} style={{ flexShrink: 0, color: "#525252" }} />
+              {page.title}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {canUnlink && (
+        <>
+          <div style={{ borderTop: "1px solid #2a2a2a" }} />
+          <button style={{ ...rowStyle, color: "#f87171", paddingTop: 2, paddingBottom: 2 }} onClick={onUnlink}>
+            <Link2Off size={13} style={{ flexShrink: 0 }} />
+            Remove link
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Editor ────────────────────────────────────────────────────────────────────
 
 export default function GDDEditor() {
-  const [pages, setPages] = useState<GDDPage[]>(() => defaultData().pages);
-  const [activeId, setActiveId] = useState<string>("home");
+  const [pages, setPages]         = useState<GDDPage[]>(() => defaultData().pages);
+  const [activeId, setActiveId]   = useState<string>("home");
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
+  const [renamingId, setRenamingId]     = useState<string | null>(null);
+  const [renameValue, setRenameValue]   = useState("");
+  const [pickerPos, setPickerPos]       = useState<{ x: number; y: number } | null>(null);
 
-  const activeIdRef = useRef(activeId);
-  const pagesRef = useRef(pages);
-  const isSwitching = useRef(false);
-  const hasLoaded = useRef(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const activeIdRef    = useRef(activeId);
+  const pagesRef       = useRef(pages);
+  const isSwitching    = useRef(false);
+  const hasLoaded      = useRef(false);
+  const dropdownRef    = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const linkBtnRef     = useRef<HTMLButtonElement>(null);
 
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   useEffect(() => { pagesRef.current = pages; }, [pages]);
@@ -110,6 +184,11 @@ export default function GDDEditor() {
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       Underline,
       Placeholder.configure({ placeholder: "Start writing…" }),
+      Link.configure({
+        openOnClick: false,            // we handle clicks ourselves
+        HTMLAttributes: { class: "gdd-page-link" },
+        validate: href => href.startsWith(GDD_SCHEME) || href.startsWith("http"),
+      }),
     ],
     content: "",
     onUpdate({ editor }) {
@@ -138,12 +217,29 @@ export default function GDDEditor() {
     setActiveId(loaded.activeId);
   }, [editor]);
 
+  // Intercept clicks on internal page links
+  const switchPageRef = useRef<(id: string) => void>(() => {});
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const handler = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest("a");
+      const href = anchor?.getAttribute("href");
+      if (href?.startsWith(GDD_SCHEME)) {
+        e.preventDefault();
+        switchPageRef.current(href.replace(GDD_SCHEME, ""));
+      }
+    };
+    dom.addEventListener("click", handler);
+    return () => dom.removeEventListener("click", handler);
+  }, [editor]);
+
   // Focus rename input when it appears
   useEffect(() => {
     if (renamingId) renameInputRef.current?.focus();
   }, [renamingId]);
 
-  // Close dropdown on outside click
+  // Close pages dropdown on outside click
   useEffect(() => {
     if (!dropdownOpen) return;
     const handler = (e: MouseEvent) => {
@@ -166,28 +262,19 @@ export default function GDDEditor() {
     editor.commands.setContent(page.content ?? "");
     requestAnimationFrame(() => { isSwitching.current = false; });
     setActiveId(id);
-    setPages(prev => {
-      saveData({ pages: prev, activeId: id });
-      return prev;
-    });
+    setPages(prev => { saveData({ pages: prev, activeId: id }); return prev; });
     setDropdownOpen(false);
     setRenamingId(null);
+    setPickerPos(null);
   };
+  switchPageRef.current = switchPage;
 
   const addPage = () => {
-    const newPage: GDDPage = {
-      id: crypto.randomUUID(),
-      title: `Page ${pagesRef.current.length + 1}`,
-      content: "",
-    };
+    const newPage: GDDPage = { id: crypto.randomUUID(), title: `Page ${pagesRef.current.length + 1}`, content: "" };
     isSwitching.current = true;
     editor?.commands.setContent("");
     requestAnimationFrame(() => { isSwitching.current = false; });
-    setPages(prev => {
-      const next = [...prev, newPage];
-      saveData({ pages: next, activeId: newPage.id });
-      return next;
-    });
+    setPages(prev => { const next = [...prev, newPage]; saveData({ pages: next, activeId: newPage.id }); return next; });
     setActiveId(newPage.id);
     setRenamingId(newPage.id);
     setRenameValue(newPage.title);
@@ -196,26 +283,19 @@ export default function GDDEditor() {
 
   const commitRename = (id: string) => {
     const trimmed = renameValue.trim();
-    if (trimmed) {
-      setPages(prev => {
-        const next = prev.map(p => p.id === id ? { ...p, title: trimmed } : p);
-        saveData({ pages: next, activeId: activeIdRef.current });
-        return next;
-      });
-    }
+    if (trimmed) setPages(prev => { const next = prev.map(p => p.id === id ? { ...p, title: trimmed } : p); saveData({ pages: next, activeId: activeIdRef.current }); return next; });
     setRenamingId(null);
   };
 
   const deletePage = (id: string) => {
     if (id === "home") return;
-    const currentPages = pagesRef.current;
-    const nextPages = currentPages.filter(p => p.id !== id);
+    const nextPages = pagesRef.current.filter(p => p.id !== id);
     let nextActiveId = activeIdRef.current;
     if (nextActiveId === id) {
       nextActiveId = "home";
-      const homePage = nextPages.find(p => p.id === "home");
+      const home = nextPages.find(p => p.id === "home");
       isSwitching.current = true;
-      editor?.commands.setContent(homePage?.content ?? "");
+      editor?.commands.setContent(home?.content ?? "");
       requestAnimationFrame(() => { isSwitching.current = false; });
       setActiveId("home");
     }
@@ -223,11 +303,47 @@ export default function GDDEditor() {
     saveData({ pages: nextPages, activeId: nextActiveId });
   };
 
+  // ── Link actions ────────────────────────────────────────────────────────────
+
+  const openPickerFromToolbar = () => {
+    if (!editor) return;
+    // If already in a link with no selection extension, just unlink
+    if (editor.isActive("link") && editor.state.selection.empty) {
+      editor.chain().focus().unsetLink().run();
+      return;
+    }
+    if (editor.state.selection.empty && !editor.isActive("link")) return;
+    const rect = linkBtnRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPickerPos({ x: rect.left, y: rect.bottom + 6 });
+  };
+
+  const applyPageLink = (pageId: string) => {
+    editor?.chain().focus().setLink({ href: `${GDD_SCHEME}${pageId}` }).run();
+    setPickerPos(null);
+  };
+
+  const removeLink = () => {
+    editor?.chain().focus().unsetLink().run();
+    setPickerPos(null);
+  };
+
+  // Right-click on editor: open page picker when text is selected
+  const handleEditorContextMenu = (e: React.MouseEvent) => {
+    if (!editor || editor.state.selection.empty) return;
+    e.preventDefault();
+    setPickerPos({ x: e.clientX, y: e.clientY });
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (!editor) return null;
 
-  const activePage = pages.find(p => p.id === activeId);
+  const activePage   = pages.find(p => p.id === activeId);
+  const hasSelection = !editor.state.selection.empty;
+  const isLinked     = editor.isActive("link");
+  const linkBtnActive = isLinked;
+  const linkBtnDisabled = !hasSelection && !isLinked;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, height: "100%", overflow: "hidden", background: "#171717" }}>
@@ -241,45 +357,43 @@ export default function GDDEditor() {
           borderBottom: "1px solid #2a2a2a", background: "#1a1a1a",
         }}
       >
-        {/* ── Formatting buttons (left) ── */}
-        <ToolBtn title="Heading 1" active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
-          <Heading1 size={16} />
-        </ToolBtn>
-        <ToolBtn title="Heading 2" active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
-          <Heading2 size={16} />
-        </ToolBtn>
-        <ToolBtn title="Heading 3" active={editor.isActive("heading", { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
-          <Heading3 size={16} />
-        </ToolBtn>
+        {/* Formatting */}
+        <ToolBtn title="Heading 1" active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 size={16} /></ToolBtn>
+        <ToolBtn title="Heading 2" active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 size={16} /></ToolBtn>
+        <ToolBtn title="Heading 3" active={editor.isActive("heading", { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}><Heading3 size={16} /></ToolBtn>
         <Divider />
-        <ToolBtn title="Bold" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
-          <Bold size={15} />
-        </ToolBtn>
-        <ToolBtn title="Italic" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}>
-          <Italic size={15} />
-        </ToolBtn>
-        <ToolBtn title="Underline" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}>
-          <UnderlineIcon size={15} />
-        </ToolBtn>
-        <ToolBtn title="Strikethrough" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}>
-          <Strikethrough size={15} />
-        </ToolBtn>
+        <ToolBtn title="Bold"          active={editor.isActive("bold")}      onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={15} /></ToolBtn>
+        <ToolBtn title="Italic"        active={editor.isActive("italic")}    onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={15} /></ToolBtn>
+        <ToolBtn title="Underline"     active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}><UnderlineIcon size={15} /></ToolBtn>
+        <ToolBtn title="Strikethrough" active={editor.isActive("strike")}    onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={15} /></ToolBtn>
         <Divider />
-        <ToolBtn title="Bullet list" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
-          <List size={15} />
-        </ToolBtn>
-        <ToolBtn title="Numbered list" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
-          <ListOrdered size={15} />
-        </ToolBtn>
+        <ToolBtn title="Bullet list"   active={editor.isActive("bulletList")}  onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={15} /></ToolBtn>
+        <ToolBtn title="Numbered list" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={15} /></ToolBtn>
         <Divider />
-        <ToolBtn title="Horizontal rule" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
-          <Minus size={15} />
-        </ToolBtn>
+        <ToolBtn title="Horizontal rule" onClick={() => editor.chain().focus().setHorizontalRule().run()}><Minus size={15} /></ToolBtn>
+        <Divider />
 
-        {/* ── Spacer ── */}
+        {/* Link to page */}
+        <button
+          ref={linkBtnRef}
+          onMouseDown={e => { e.preventDefault(); openPickerFromToolbar(); }}
+          title={isLinked ? "Remove link / change link" : "Link to page"}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 30, height: 30, borderRadius: 4, border: "none",
+            cursor: linkBtnDisabled ? "default" : "pointer",
+            background: linkBtnActive ? "rgba(125,211,252,0.15)" : "transparent",
+            color: linkBtnDisabled ? "#404040" : linkBtnActive ? "#7dd3fc" : "#737373",
+            transition: "background 0.1s, color 0.1s",
+          }}
+        >
+          <Link2 size={15} />
+        </button>
+
+        {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* ── Pages dropdown (right) ── */}
+        {/* Pages dropdown */}
         <div ref={dropdownRef} style={{ position: "relative" }}>
           <button
             onMouseDown={e => e.preventDefault()}
@@ -293,9 +407,7 @@ export default function GDDEditor() {
               whiteSpace: "nowrap", maxWidth: 180,
             }}
           >
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-              {activePage?.title ?? "Home"}
-            </span>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{activePage?.title ?? "Home"}</span>
             <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.6 }} />
           </button>
 
@@ -304,90 +416,40 @@ export default function GDDEditor() {
               onMouseDown={e => e.preventDefault()}
               style={{
                 position: "absolute", right: 0, top: "calc(100% + 6px)",
-                minWidth: 200, maxWidth: 280,
-                background: "#1e1e1e", border: "1px solid #333",
-                borderRadius: 7, boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-                overflow: "hidden", zIndex: 100,
+                minWidth: 200, maxWidth: 280, background: "#1e1e1e",
+                border: "1px solid #333", borderRadius: 7,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.5)", overflow: "hidden", zIndex: 100,
               }}
             >
-              {/* Page list */}
               <div style={{ padding: "4px 0" }}>
                 {pages.map(page => {
-                  const isActive = page.id === activeId;
+                  const isActive   = page.id === activeId;
                   const isRenaming = renamingId === page.id;
                   return (
-                    <div
-                      key={page.id}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 2,
-                        padding: "0 6px 0 10px", height: 34,
-                        background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
-                      }}
-                    >
-                      {/* Active dot */}
-                      <div style={{
-                        width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                        background: isActive ? "#737373" : "transparent",
-                        marginRight: 4,
-                      }} />
-
+                    <div key={page.id} style={{ display: "flex", alignItems: "center", gap: 2, padding: "0 6px 0 10px", height: 34, background: isActive ? "rgba(255,255,255,0.06)" : "transparent" }}>
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: isActive ? "#737373" : "transparent", marginRight: 4 }} />
                       {isRenaming ? (
-                        /* Inline rename input */
                         <>
                           <input
                             ref={renameInputRef}
                             value={renameValue}
                             onChange={e => setRenameValue(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") commitRename(page.id);
-                              if (e.key === "Escape") setRenamingId(null);
-                            }}
-                            style={{
-                              flex: 1, minWidth: 0, background: "#2a2a2a",
-                              border: "1px solid #444", borderRadius: 3,
-                              color: "#e5e5e5", fontSize: 13, padding: "2px 6px",
-                              outline: "none",
-                            }}
+                            onKeyDown={e => { if (e.key === "Enter") commitRename(page.id); if (e.key === "Escape") setRenamingId(null); }}
+                            style={{ flex: 1, minWidth: 0, background: "#2a2a2a", border: "1px solid #444", borderRadius: 3, color: "#e5e5e5", fontSize: 13, padding: "2px 6px", outline: "none" }}
                           />
-                          <button
-                            onClick={() => commitRename(page.id)}
-                            style={{ padding: 4, background: "none", border: "none", cursor: "pointer", color: "#4ade80", display: "flex", alignItems: "center", borderRadius: 3, flexShrink: 0 }}
-                          >
+                          <button onClick={() => commitRename(page.id)} style={{ padding: 4, background: "none", border: "none", cursor: "pointer", color: "#4ade80", display: "flex", alignItems: "center", borderRadius: 3, flexShrink: 0 }}>
                             <Check size={13} />
                           </button>
                         </>
                       ) : (
-                        /* Page name — click to navigate */
                         <>
-                          <button
-                            onClick={() => switchPage(page.id)}
-                            style={{
-                              flex: 1, minWidth: 0, textAlign: "left",
-                              background: "none", border: "none", cursor: "pointer",
-                              color: isActive ? "#e5e5e5" : "#a3a3a3",
-                              fontSize: 13, padding: "0 2px",
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                            }}
-                          >
+                          <button onClick={() => switchPage(page.id)} style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", cursor: "pointer", color: isActive ? "#e5e5e5" : "#a3a3a3", fontSize: 13, padding: "0 2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {page.title}
                           </button>
-                          {/* Rename & delete — not available for Home */}
                           {page.id !== "home" && (
                             <>
-                              <button
-                                onClick={() => { setRenamingId(page.id); setRenameValue(page.title); }}
-                                style={{ padding: 4, background: "none", border: "none", cursor: "pointer", color: "#525252", display: "flex", alignItems: "center", borderRadius: 3, flexShrink: 0 }}
-                                title="Rename page"
-                              >
-                                <Pencil size={12} />
-                              </button>
-                              <button
-                                onClick={() => deletePage(page.id)}
-                                style={{ padding: 4, background: "none", border: "none", cursor: "pointer", color: "#525252", display: "flex", alignItems: "center", borderRadius: 3, flexShrink: 0 }}
-                                title="Delete page"
-                              >
-                                <X size={12} />
-                              </button>
+                              <button onClick={() => { setRenamingId(page.id); setRenameValue(page.title); }} style={{ padding: 4, background: "none", border: "none", cursor: "pointer", color: "#525252", display: "flex", alignItems: "center", borderRadius: 3, flexShrink: 0 }} title="Rename page"><Pencil size={12} /></button>
+                              <button onClick={() => deletePage(page.id)} style={{ padding: 4, background: "none", border: "none", cursor: "pointer", color: "#525252", display: "flex", alignItems: "center", borderRadius: 3, flexShrink: 0 }} title="Delete page"><X size={12} /></button>
                             </>
                           )}
                         </>
@@ -396,20 +458,9 @@ export default function GDDEditor() {
                   );
                 })}
               </div>
-
-              {/* Separator + New Page */}
               <div style={{ borderTop: "1px solid #2a2a2a" }}>
-                <button
-                  onClick={addPage}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    width: "100%", padding: "0 10px", height: 34,
-                    background: "none", border: "none", cursor: "pointer",
-                    color: "#737373", fontSize: 13, textAlign: "left",
-                  }}
-                >
-                  <Plus size={13} />
-                  New Page
+                <button onClick={addPage} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "0 10px", height: 34, background: "none", border: "none", cursor: "pointer", color: "#737373", fontSize: 13 }}>
+                  <Plus size={13} /> New Page
                 </button>
               </div>
             </div>
@@ -418,36 +469,38 @@ export default function GDDEditor() {
       </div>
 
       {/* Editor content */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "32px 0" }}>
+      <div
+        style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "32px 0" }}
+        onContextMenu={handleEditorContextMenu}
+      >
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 32px" }}>
           <EditorContent editor={editor} />
         </div>
       </div>
 
+      {/* Page picker popup */}
+      {pickerPos && (
+        <PagePicker
+          pos={pickerPos}
+          pages={pages}
+          currentId={activeId}
+          onSelect={applyPageLink}
+          onUnlink={removeLink}
+          canUnlink={isLinked}
+          onClose={() => setPickerPos(null)}
+        />
+      )}
+
       <style>{`
         .gdd-editor {
-          outline: none;
-          color: #d4d4d4;
-          font-family: inherit;
-          font-size: 15px;
-          line-height: 1.75;
-          caret-color: #d4d4d4;
-          min-height: 100%;
+          outline: none; color: #d4d4d4; font-family: inherit;
+          font-size: 15px; line-height: 1.75; caret-color: #d4d4d4; min-height: 100%;
         }
-
         .gdd-editor p.is-editor-empty:first-child::before {
-          content: attr(data-placeholder);
-          color: #404040;
-          pointer-events: none;
-          float: left;
-          height: 0;
+          content: attr(data-placeholder); color: #404040;
+          pointer-events: none; float: left; height: 0;
         }
-
-        .gdd-editor h1 {
-          font-size: 2em; font-weight: 700; color: #f5f5f5;
-          margin: 1.4em 0 0.5em; line-height: 1.2;
-          border-bottom: 1px solid #2a2a2a; padding-bottom: 0.3em;
-        }
+        .gdd-editor h1 { font-size: 2em; font-weight: 700; color: #f5f5f5; margin: 1.4em 0 0.5em; line-height: 1.2; border-bottom: 1px solid #2a2a2a; padding-bottom: 0.3em; }
         .gdd-editor h1:first-child { margin-top: 0; }
         .gdd-editor h2 { font-size: 1.45em; font-weight: 700; color: #e5e5e5; margin: 1.3em 0 0.4em; line-height: 1.3; }
         .gdd-editor h3 { font-size: 1.15em; font-weight: 600; color: #d4d4d4; margin: 1.2em 0 0.3em; line-height: 1.4; }
@@ -463,19 +516,23 @@ export default function GDDEditor() {
         .gdd-editor ul > li > ul > li { list-style-type: circle; }
         .gdd-editor ol > li { list-style-type: decimal; }
         .gdd-editor hr { border: none; border-top: 1px solid #2a2a2a; margin: 1.5em 0; }
-        .gdd-editor code {
-          background: #2a2a2a; color: #86efac; border-radius: 3px;
-          padding: 1px 5px; font-size: 0.88em;
-          font-family: 'Menlo', 'Consolas', monospace;
-        }
-        .gdd-editor pre {
-          background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 6px;
-          padding: 14px 16px; overflow-x: auto; margin: 1em 0;
-        }
+        .gdd-editor code { background: #2a2a2a; color: #86efac; border-radius: 3px; padding: 1px 5px; font-size: 0.88em; font-family: 'Menlo', 'Consolas', monospace; }
+        .gdd-editor pre { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 6px; padding: 14px 16px; overflow-x: auto; margin: 1em 0; }
         .gdd-editor pre code { background: none; padding: 0; color: #86efac; font-size: 0.88em; }
-        .gdd-editor blockquote {
-          border-left: 3px solid #404040; margin: 1em 0;
-          padding: 0.2em 0 0.2em 1em; color: #a3a3a3;
+        .gdd-editor blockquote { border-left: 3px solid #404040; margin: 1em 0; padding: 0.2em 0 0.2em 1em; color: #a3a3a3; }
+
+        /* Internal page links */
+        .gdd-editor a.gdd-page-link {
+          color: #7dd3fc;
+          text-decoration: underline;
+          text-underline-offset: 3px;
+          text-decoration-color: rgba(125,211,252,0.4);
+          cursor: pointer;
+          transition: color 0.1s;
+        }
+        .gdd-editor a.gdd-page-link:hover {
+          color: #bae6fd;
+          text-decoration-color: rgba(186,230,253,0.5);
         }
       `}</style>
     </div>

@@ -4,7 +4,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Placeholder from "@tiptap/extension-placeholder";
-import Link from "@tiptap/extension-link";
+import { Mark, mergeAttributes } from "@tiptap/core";
 import { useEffect, useRef, useState } from "react";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
@@ -13,7 +13,29 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "gameref_gdd_v1";
-const GDD_SCHEME = "gdd-page://";
+
+// ── Custom PageLink mark ──────────────────────────────────────────────────────
+// Renders as <span data-page-id="..."> — no <a href>, so Chrome can't follow it.
+
+const PageLink = Mark.create({
+  name: "pageLink",
+
+  addAttributes() {
+    return {
+      pageId: {
+        default: null,
+        parseHTML: el => el.getAttribute("data-page-id"),
+        renderHTML: attrs => ({ "data-page-id": attrs.pageId }),
+      },
+    };
+  },
+
+  parseHTML() { return [{ tag: "span[data-page-id]" }]; },
+
+  renderHTML({ HTMLAttributes }) {
+    return ["span", mergeAttributes({ class: "gdd-page-link" }, HTMLAttributes), 0];
+  },
+});
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -184,11 +206,7 @@ export default function GDDEditor() {
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       Underline,
       Placeholder.configure({ placeholder: "Start writing…" }),
-      Link.configure({
-        openOnClick: false,            // we handle clicks ourselves
-        HTMLAttributes: { class: "gdd-page-link" },
-        validate: href => href.startsWith(GDD_SCHEME) || href.startsWith("http"),
-      }),
+      PageLink,
     ],
     content: "",
     onUpdate({ editor }) {
@@ -205,12 +223,10 @@ export default function GDDEditor() {
       attributes: { class: "gdd-editor" },
       handleDOMEvents: {
         click(view, event) {
-          const anchor = (event.target as HTMLElement).closest("a");
-          const href = anchor?.getAttribute("href");
-          if (href?.startsWith(GDD_SCHEME)) {
-            event.preventDefault();
-            event.stopPropagation();
-            switchPageRef.current(href.replace(GDD_SCHEME, ""));
+          const el = (event.target as HTMLElement).closest("[data-page-id]") as HTMLElement | null;
+          const pageId = el?.getAttribute("data-page-id");
+          if (pageId) {
+            switchPageRef.current(pageId);
             return true;
           }
           return false;
@@ -308,24 +324,24 @@ export default function GDDEditor() {
 
   const openPickerFromToolbar = () => {
     if (!editor) return;
-    // If already in a link with no selection extension, just unlink
-    if (editor.isActive("link") && editor.state.selection.empty) {
-      editor.chain().focus().unsetLink().run();
+    // If cursor is inside a page link with no selection, just unlink
+    if (editor.isActive("pageLink") && editor.state.selection.empty) {
+      editor.chain().focus().unsetMark("pageLink").run();
       return;
     }
-    if (editor.state.selection.empty && !editor.isActive("link")) return;
+    if (editor.state.selection.empty && !editor.isActive("pageLink")) return;
     const rect = linkBtnRef.current?.getBoundingClientRect();
     if (!rect) return;
     setPickerPos({ x: rect.left, y: rect.bottom + 6 });
   };
 
   const applyPageLink = (pageId: string) => {
-    editor?.chain().focus().setLink({ href: `${GDD_SCHEME}${pageId}` }).run();
+    editor?.chain().focus().setMark("pageLink", { pageId }).run();
     setPickerPos(null);
   };
 
   const removeLink = () => {
-    editor?.chain().focus().unsetLink().run();
+    editor?.chain().focus().unsetMark("pageLink").run();
     setPickerPos(null);
   };
 
@@ -342,7 +358,7 @@ export default function GDDEditor() {
 
   const activePage   = pages.find(p => p.id === activeId);
   const hasSelection = !editor.state.selection.empty;
-  const isLinked     = editor.isActive("link");
+  const isLinked     = editor.isActive("pageLink");
   const linkBtnActive = isLinked;
   const linkBtnDisabled = !hasSelection && !isLinked;
 
@@ -522,8 +538,8 @@ export default function GDDEditor() {
         .gdd-editor pre code { background: none; padding: 0; color: #86efac; font-size: 0.88em; }
         .gdd-editor blockquote { border-left: 3px solid #404040; margin: 1em 0; padding: 0.2em 0 0.2em 1em; color: #a3a3a3; }
 
-        /* Internal page links */
-        .gdd-editor a.gdd-page-link {
+        /* Internal page links (span, no href — safe from browser navigation) */
+        .gdd-editor span.gdd-page-link {
           color: #7dd3fc;
           text-decoration: underline;
           text-underline-offset: 3px;
@@ -531,7 +547,7 @@ export default function GDDEditor() {
           cursor: pointer;
           transition: color 0.1s;
         }
-        .gdd-editor a.gdd-page-link:hover {
+        .gdd-editor span.gdd-page-link:hover {
           color: #bae6fd;
           text-decoration-color: rgba(186,230,253,0.5);
         }

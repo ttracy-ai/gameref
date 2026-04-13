@@ -201,7 +201,22 @@ export default function GDDEditor() {
         return next;
       });
     },
-    editorProps: { attributes: { class: "gdd-editor" } },
+    editorProps: {
+      attributes: { class: "gdd-editor" },
+      handleDOMEvents: {
+        click(view, event) {
+          const anchor = (event.target as HTMLElement).closest("a");
+          const href = anchor?.getAttribute("href");
+          if (href?.startsWith(GDD_SCHEME)) {
+            event.preventDefault();
+            event.stopPropagation();
+            switchPageRef.current(href.replace(GDD_SCHEME, ""));
+            return true;
+          }
+          return false;
+        },
+      },
+    },
   });
 
   // Load from storage once editor is ready
@@ -219,20 +234,6 @@ export default function GDDEditor() {
 
   // Intercept clicks on internal page links
   const switchPageRef = useRef<(id: string) => void>(() => {});
-  useEffect(() => {
-    if (!editor) return;
-    const dom = editor.view.dom;
-    const handler = (e: MouseEvent) => {
-      const anchor = (e.target as HTMLElement).closest("a");
-      const href = anchor?.getAttribute("href");
-      if (href?.startsWith(GDD_SCHEME)) {
-        e.preventDefault();
-        switchPageRef.current(href.replace(GDD_SCHEME, ""));
-      }
-    };
-    dom.addEventListener("click", handler);
-    return () => dom.removeEventListener("click", handler);
-  }, [editor]);
 
   // Focus rename input when it appears
   useEffect(() => {

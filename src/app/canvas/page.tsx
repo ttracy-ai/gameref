@@ -3,6 +3,7 @@
 import { ScrollText, Images, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import RefBoard from "@/components/RefBoard";
+import GDDEditor from "@/components/GDDEditor";
 
 type RibbonItem = {
   id: string;
@@ -88,11 +89,11 @@ export default function CanvasPage() {
       {/* Main area */}
       {active === "refboard" ? (
         <RefBoard />
+      ) : active === "gdd" ? (
+        <GDDEditor />
       ) : (
         <main className="flex-1 flex items-center justify-center text-neutral-600 select-none text-sm">
-          {active
-            ? `${ribbonItems.find((i) => i.id === active)?.label} canvas coming soon`
-            : "Select a tool to get started"}
+          Select a tool to get started
         </main>
       )}
     </div>

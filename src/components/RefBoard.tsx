@@ -649,7 +649,7 @@ export default function RefBoard() {
 
             {/* Note indicators — shown when not focused and image has notes */}
             {!isFocused && img.notes.length > 0 && (
-              <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 3, pointerEvents: "none", zIndex: 10 }}>
+              <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 3, pointerEvents: "none" }}>
                 {img.notes.slice(0, 4).map((note, i) => {
                   const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
                   return (

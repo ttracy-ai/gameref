@@ -11,7 +11,7 @@ import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Heading1, Heading2, Heading3, List, ListOrdered, Minus,
   ChevronDown, Plus, X, Check, Pencil, Link2, Link2Off,
-  Image as ImageIcon, ExternalLink,
+  Image as ImageIcon, ExternalLink, Maximize2, Minimize2,
 } from "lucide-react";
 
 const STORAGE_KEY = "gameref_gdd_v1";
@@ -47,10 +47,11 @@ const GDDImageContext = createContext<{ onImageRefClick: (id: string) => void }>
   onImageRefClick: () => {},
 });
 
-// NodeView rendered inside TipTap — shows a small thumbnail chip
-function ImageRefNodeView({ node }: NodeViewProps) {
+// NodeView: chip when imgHeight === 0, resizable card otherwise
+function ImageRefNodeView({ node, updateAttributes }: NodeViewProps) {
   const { onImageRefClick } = useContext(GDDImageContext);
-  const imageId: string = node.attrs.imageId;
+  const imageId: string  = node.attrs.imageId;
+  const imgHeight: number = node.attrs.imgHeight ?? 0;
   const [thumb, setThumb] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,36 +64,116 @@ function ImageRefNodeView({ node }: NodeViewProps) {
     } catch {}
   }, [imageId]);
 
+  // Drag-to-resize the bottom handle
+  const handleResizeStart = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY   = e.clientY;
+    const startH   = imgHeight > 0 ? imgHeight : 200;
+    const onMove   = (ev: PointerEvent) => {
+      const h = Math.max(60, Math.round(startH + (ev.clientY - startY)));
+      updateAttributes({ imgHeight: h });
+    };
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  };
+
+  const btnStyle: React.CSSProperties = {
+    background: "none", border: "none", cursor: "pointer", padding: 3,
+    display: "flex", alignItems: "center", color: "#525252",
+    borderRadius: 3, transition: "color 0.1s",
+  };
+
+  if (imgHeight === 0) {
+    // ── Chip mode ─────────────────────────────────────────────────────────────
+    return (
+      <NodeViewWrapper as="div" style={{ display: "block", margin: "4px 0" }}>
+        <div
+          contentEditable={false}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            background: "#1e1e1e", border: "1px solid #2a2a2a", borderRadius: 5,
+            padding: "2px 6px 2px 3px", userSelect: "none",
+          }}
+        >
+          {thumb ? (
+            <img src={thumb} style={{ height: 26, width: "auto", maxWidth: 40, objectFit: "cover", borderRadius: 3, display: "block" }} />
+          ) : (
+            <div style={{ width: 26, height: 26, background: "#2a2a2a", borderRadius: 3, flexShrink: 0 }} />
+          )}
+          <span style={{ fontSize: 11, color: "#7dd3fc", whiteSpace: "nowrap" }}>Ref Board</span>
+          <button onClick={() => onImageRefClick(imageId)} title="Open in Reference Board" style={btnStyle}>
+            <ExternalLink size={11} />
+          </button>
+          <button onClick={() => updateAttributes({ imgHeight: 200 })} title="Expand image" style={btnStyle}>
+            <Maximize2 size={11} />
+          </button>
+        </div>
+      </NodeViewWrapper>
+    );
+  }
+
+  // ── Card mode ──────────────────────────────────────────────────────────────
   return (
-    <NodeViewWrapper as="span" style={{ display: "inline-block", verticalAlign: "middle", lineHeight: 1 }}>
-      <span
+    <NodeViewWrapper as="div" style={{ display: "block", margin: "8px 0" }}>
+      <div
         contentEditable={false}
-        onClick={() => onImageRefClick(imageId)}
-        title="Open in Reference Board"
         style={{
-          display: "inline-flex", alignItems: "center", gap: 5,
-          background: "#1e1e1e", border: "1px solid #333", borderRadius: 5,
-          padding: "2px 8px 2px 3px", cursor: "pointer", userSelect: "none",
-          verticalAlign: "middle", transition: "border-color 0.15s",
+          width: "100%", borderRadius: 6, overflow: "hidden",
+          border: "1px solid #2a2a2a", background: "#111",
+          userSelect: "none",
         }}
       >
-        {thumb ? (
-          <img src={thumb} style={{ height: 26, width: "auto", maxWidth: 40, objectFit: "cover", borderRadius: 3, display: "block" }} />
-        ) : (
-          <div style={{ width: 26, height: 26, background: "#2a2a2a", borderRadius: 3, flexShrink: 0 }} />
-        )}
-        <span style={{ fontSize: 11, color: "#7dd3fc", whiteSpace: "nowrap" }}>Ref Board</span>
-        <ExternalLink size={10} style={{ color: "#404040", flexShrink: 0 }} />
-      </span>
+        {/* Card header */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "3px 6px 3px 10px", background: "#1a1a1a",
+          borderBottom: "1px solid #222",
+        }}>
+          <span style={{ fontSize: 10.5, color: "#404040", letterSpacing: "0.05em", fontWeight: 600 }}>REF BOARD</span>
+          <div style={{ display: "flex", gap: 2 }}>
+            <button onClick={() => updateAttributes({ imgHeight: 0 })} title="Collapse to chip" style={btnStyle}>
+              <Minimize2 size={12} />
+            </button>
+            <button onClick={() => onImageRefClick(imageId)} title="Open in Reference Board" style={btnStyle}>
+              <ExternalLink size={12} />
+            </button>
+          </div>
+        </div>
+
+        {/* Image — height is user-controlled, width is always 100% */}
+        <div style={{ height: imgHeight, overflow: "hidden" }}>
+          {thumb ? (
+            <img src={thumb} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+          ) : (
+            <div style={{ width: "100%", height: "100%", background: "#1e1e1e" }} />
+          )}
+        </div>
+
+        {/* Drag-to-resize handle */}
+        <div
+          onPointerDown={handleResizeStart}
+          title="Drag to resize"
+          style={{
+            height: 8, background: "#1a1a1a", borderTop: "1px solid #222",
+            cursor: "ns-resize", display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <div style={{ width: 28, height: 2, background: "#333", borderRadius: 1 }} />
+        </div>
+      </div>
     </NodeViewWrapper>
   );
 }
 
-// Inline atom node — stored as <span data-image-id="...">
+// Block atom node — stored as <div data-image-id="..." data-img-height="...">
 const ImageRef = TipTapNode.create({
   name: "imageRef",
-  group: "inline",
-  inline: true,
+  group: "block",
   atom: true,
 
   addAttributes() {
@@ -102,13 +183,18 @@ const ImageRef = TipTapNode.create({
         parseHTML: el => el.getAttribute("data-image-id"),
         renderHTML: attrs => ({ "data-image-id": attrs.imageId }),
       },
+      imgHeight: {
+        default: 0,
+        parseHTML: el => parseInt(el.getAttribute("data-img-height") ?? "0", 10),
+        renderHTML: attrs => ({ "data-img-height": String(attrs.imgHeight) }),
+      },
     };
   },
 
-  parseHTML() { return [{ tag: "span[data-image-id]" }]; },
+  parseHTML() { return [{ tag: "div[data-image-id]" }]; },
 
   renderHTML({ HTMLAttributes }) {
-    return ["span", mergeAttributes({ class: "gdd-image-ref" }, HTMLAttributes)];
+    return ["div", mergeAttributes({ class: "gdd-image-ref" }, HTMLAttributes)];
   },
 
   addNodeView() {

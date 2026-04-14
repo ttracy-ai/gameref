@@ -4,8 +4,10 @@ import {
   ScrollText, Images, ChevronLeft, ChevronRight, BarChart2,
   Code2, Map, Users, PenLine, FolderOpen, LogOut,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signOut } from "next-auth/react";
+
+const SESSION_KEY = "gameref_session_v1";
 
 import RefBoard from "@/components/RefBoard";
 import GDDEditor from "@/components/GDDEditor";
@@ -45,6 +47,26 @@ export default function CanvasPage() {
   const [active, setActive] = useState<string>("projects");
   const [collapsed, setCollapsed] = useState(false);
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+
+  // Restore session on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const { project, canvas } = JSON.parse(raw);
+        if (project) setActiveProject(project);
+        if (canvas) setActive(canvas);
+      }
+    } catch {}
+    setSessionLoaded(true);
+  }, []);
+
+  // Persist session whenever project or canvas changes
+  useEffect(() => {
+    if (!sessionLoaded) return;
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ project: activeProject, canvas: active }));
+  }, [activeProject, active, sessionLoaded]);
 
   function handleOpenProject(project: Project) {
     setActiveProject({ id: project.id, name: project.name });

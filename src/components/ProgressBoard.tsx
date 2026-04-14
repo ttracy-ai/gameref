@@ -194,7 +194,7 @@ export default function ProgressBoard() {
                                   : "hover:brightness-110"
                               }`}
                               style={{
-                                background: `color-mix(in srgb, ${CARD_COLORS[card.colorIdx]?.strip ?? CARD_COLORS[0].strip} 14%, #141414)`,
+                                background: `color-mix(in srgb, ${CARD_COLORS[card.colorIdx]?.strip ?? CARD_COLORS[0].strip} 18%, #e8e8e8)`,
                                 borderLeft: `4px solid ${
                                   CARD_COLORS[card.colorIdx]?.strip ??
                                   CARD_COLORS[0].strip
@@ -203,11 +203,11 @@ export default function ProgressBoard() {
                               }}
                             >
                               <div className="px-3 py-2.5">
-                                <p className="text-sm text-neutral-100 leading-snug font-medium">
+                                <p className="text-sm text-neutral-900 leading-snug font-medium">
                                   {card.title}
                                 </p>
                                 {card.details && (
-                                  <p className="text-xs text-neutral-400 mt-1 line-clamp-2 leading-relaxed">
+                                  <p className="text-xs text-neutral-600 mt-1 line-clamp-2 leading-relaxed">
                                     {card.details}
                                   </p>
                                 )}

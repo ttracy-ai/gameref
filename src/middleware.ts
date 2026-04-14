@@ -2,7 +2,8 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
 export default auth((req) => {
-  if (!req.auth && !req.nextUrl.pathname.startsWith("/login")) {
+  const { pathname } = req.nextUrl;
+  if (!req.auth && !pathname.startsWith("/login") && !pathname.startsWith("/api/auth")) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 });

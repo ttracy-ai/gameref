@@ -1,6 +1,6 @@
 "use client";
 
-import { ScrollText, Images, ChevronLeft, ChevronRight, BarChart2 } from "lucide-react";
+import { ScrollText, Images, ChevronLeft, ChevronRight, BarChart2, Code2, Map, Users } from "lucide-react";
 import { useState } from "react";
 
 import RefBoard from "@/components/RefBoard";
@@ -29,7 +29,30 @@ const ribbonItems: RibbonItem[] = [
     icon: <Images size={22} />,
     label: "Reference Board",
   },
+  {
+    id: "code-layout",
+    icon: <Code2 size={22} />,
+    label: "Code Layout",
+  },
+  {
+    id: "map-layout",
+    icon: <Map size={22} />,
+    label: "Map Layout",
+  },
+  {
+    id: "team",
+    icon: <Users size={22} />,
+    label: "Team / Credits",
+  },
 ];
+
+function Placeholder({ label }: { label: string }) {
+  return (
+    <main className="flex-1 flex items-center justify-center text-neutral-700 select-none text-sm">
+      {label} — coming soon
+    </main>
+  );
+}
 
 export default function CanvasPage() {
   const [active, setActive] = useState<string | null>("progress");
@@ -109,6 +132,12 @@ export default function CanvasPage() {
         />
       ) : active === "gdd" ? (
         <GDDEditor onImageRefClick={handleImageRefClick} />
+      ) : active === "code-layout" ? (
+        <Placeholder label="Code Layout" />
+      ) : active === "map-layout" ? (
+        <Placeholder label="Map Layout" />
+      ) : active === "team" ? (
+        <Placeholder label="Team / Credits" />
       ) : (
         <main className="flex-1 flex items-center justify-center text-neutral-600 select-none text-sm">
           Select a tool to get started

@@ -32,6 +32,7 @@ export async function GET(
     members: members.map((m) => ({
       id: m.userId,
       name: m.user.name,
+      username: m.user.username,
       email: m.user.email,
       image: m.user.image,
       role: m.role,

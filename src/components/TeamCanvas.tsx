@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, X, UserPlus, Crown, User } from "lucide-react";
+import { Loader2, X, UserPlus, Crown, User, Pencil, Check } from "lucide-react";
 
 type Member = {
   id: string;
   name: string | null;
+  username: string | null;
   email: string | null;
   image: string | null;
   role: string;
@@ -24,17 +25,29 @@ type TeamData = {
   currentUserRole: string;
 };
 
-function Avatar({ name, image }: { name: string | null; image: string | null }) {
+type Profile = {
+  username: string | null;
+  name: string | null;
+  email: string | null;
+  image: string | null;
+};
+
+function displayName(member: Pick<Member, "username" | "name" | "email">) {
+  return member.username ?? member.name ?? member.email ?? "Unknown";
+}
+
+function Avatar({ name, username, image }: { name: string | null; username: string | null; image: string | null }) {
   if (image) {
     return (
       <img
         src={image}
-        alt={name ?? ""}
+        alt={username ?? name ?? ""}
         className="w-8 h-8 rounded-full object-cover shrink-0"
       />
     );
   }
-  const initials = (name ?? "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  const label = username ?? name ?? "?";
+  const initials = label.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center text-xs font-semibold text-neutral-300 shrink-0">
       {initials}
@@ -50,17 +63,74 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
 
+  // Profile / username state
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [editingUsername, setEditingUsername] = useState(false);
+  const [usernameInput, setUsernameInput] = useState("");
+  const [usernameSaving, setUsernameSaving] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/projects/${projectId}/members`)
-      .then((r) => {
+    Promise.all([
+      fetch(`/api/projects/${projectId}/members`).then((r) => {
         if (!r.ok) throw new Error(String(r.status));
         return r.json();
+      }),
+      fetch("/api/user/profile").then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      }),
+    ])
+      .then(([teamData, profileData]) => {
+        setData(teamData);
+        setProfile(profileData);
       })
-      .then((d) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [projectId]);
+
+  function startEditingUsername() {
+    setUsernameInput(profile?.username ?? "");
+    setUsernameError(null);
+    setEditingUsername(true);
+  }
+
+  async function saveUsername() {
+    const trimmed = usernameInput.trim();
+    if (!trimmed) return;
+    setUsernameSaving(true);
+    setUsernameError(null);
+    try {
+      const res = await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: trimmed }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setUsernameError(json.error ?? "Failed to save.");
+      } else {
+        setProfile((prev) => prev ? { ...prev, username: json.username } : prev);
+        // Update our own entry in the members list too
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                members: prev.members.map((m) =>
+                  m.email === profile?.email ? { ...m, username: json.username } : m
+                ),
+              }
+            : prev
+        );
+        setEditingUsername(false);
+      }
+    } catch {
+      setUsernameError("Failed to save. Please try again.");
+    } finally {
+      setUsernameSaving(false);
+    }
+  }
 
   async function invite() {
     const email = inviteEmail.trim().toLowerCase();
@@ -94,7 +164,6 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
       } else {
         setInviteSuccess(`${email} has been added to the project.`);
         setInviteEmail("");
-        // Refresh member list
         const refreshed = await fetch(`/api/projects/${projectId}/members`).then((r) => r.json());
         setData(refreshed);
       }
@@ -158,6 +227,59 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             </p>
           </div>
 
+          {/* Your profile / username */}
+          {profile !== null && (
+            <div className="bg-neutral-800 rounded-xl border border-neutral-700 p-5 mb-6">
+              <h2 className="text-neutral-300 text-sm font-semibold mb-3 flex items-center gap-2">
+                <User size={15} />
+                Your username
+              </h2>
+              {editingUsername ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={usernameInput}
+                    onChange={(e) => { setUsernameInput(e.target.value); setUsernameError(null); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") saveUsername(); if (e.key === "Escape") setEditingUsername(false); }}
+                    placeholder="your_username"
+                    autoFocus
+                    className="flex-1 bg-neutral-900 border border-neutral-600 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder:text-neutral-600 outline-none focus:border-neutral-400 transition-colors"
+                  />
+                  <button
+                    onClick={saveUsername}
+                    disabled={!usernameInput.trim() || usernameSaving}
+                    className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+                  >
+                    {usernameSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  </button>
+                  <button
+                    onClick={() => setEditingUsername(false)}
+                    className="px-3 py-2 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-300 transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-neutral-200 text-sm font-mono">
+                    {profile.username ? `@${profile.username}` : <span className="text-neutral-500 font-sans">No username set</span>}
+                  </span>
+                  <button
+                    onClick={startEditingUsername}
+                    className="text-neutral-600 hover:text-neutral-300 transition-colors"
+                    title="Edit username"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </div>
+              )}
+              {usernameError && <p className="mt-2 text-xs text-red-400">{usernameError}</p>}
+              <p className="mt-2 text-xs text-neutral-600">
+                Letters, numbers, _, ., - only · 2–32 characters · shown to teammates instead of your full name
+              </p>
+            </div>
+          )}
+
           {/* Invite form — owner only */}
           {isOwner && (
             <div className="bg-neutral-800 rounded-xl border border-neutral-700 p-5 mb-6">
@@ -197,12 +319,12 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             <div className="divide-y divide-neutral-700/50">
               {data.members.map((member) => (
                 <div key={member.id} className="flex items-center gap-3 px-5 py-3">
-                  <Avatar name={member.name} image={member.image} />
+                  <Avatar name={member.name} username={member.username} image={member.image} />
                   <div className="flex-1 min-w-0">
                     <p className="text-neutral-200 text-sm font-medium truncate">
-                      {member.name ?? member.email}
+                      {displayName(member)}
                     </p>
-                    {member.name && (
+                    {member.username && (
                       <p className="text-neutral-500 text-xs truncate">{member.email}</p>
                     )}
                   </div>

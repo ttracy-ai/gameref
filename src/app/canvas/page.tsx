@@ -28,8 +28,8 @@ const canvasItems: RibbonItem[] = [
   { id: "refboard",    icon: <Images size={22} />,    label: "Reference Board" },
   { id: "code-layout", icon: <Code2 size={22} />,     label: "Code Layout" },
   { id: "map-layout",  icon: <Map size={22} />,       label: "Map Layout" },
-  { id: "team",        icon: <Users size={22} />,     label: "Team / Credits" },
   { id: "writing",     icon: <PenLine size={22} />,   label: "Writing" },
+  { id: "team",        icon: <Users size={22} />,     label: "Team / Credits" },
 ];
 
 function Placeholder({ label }: { label: string }) {

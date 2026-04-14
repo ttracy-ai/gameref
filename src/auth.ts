@@ -1,16 +1,15 @@
 import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+import { authConfig } from "./auth.config";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   adapter: PrismaAdapter(prisma),
-  providers: [Google],
   session: { strategy: "jwt" },
-  pages: { signIn: "/login" },
   callbacks: {
     async signIn({ user }) {
-      // When a user signs in, fulfill any pending project invitations for their email.
+      // Fulfill any pending project invitations for this email on sign-in.
       if (!user.email || !user.id) return true;
       try {
         const invitations = await prisma.projectInvitation.findMany({

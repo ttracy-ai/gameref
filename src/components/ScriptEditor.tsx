@@ -41,52 +41,52 @@ type BlockConfig = {
 
 const BLOCK_CONFIG: Record<BlockType, BlockConfig> = {
   "act": {
-    label: "Act",
+    label: "Chapter",
     color: "#f59e0b",
-    hint: "Marks a major division in your script. A full-length play typically has 2–3 acts. It will be centered and underlined automatically.",
-    placeholder: "ACT I",
+    hint: "A major story division — like Chapter 1 or Act I in a game's narrative. Use this to separate your story into large sections (e.g. the opening, the rising action, the climax). Centered and underlined automatically.",
+    placeholder: "CHAPTER 1",
   },
   "scene": {
     label: "Scene",
     color: "#fb923c",
-    hint: "A scene is a section within an act. Scenes change when the location or time shifts. Centered and underlined automatically.",
-    placeholder: "Scene 1",
+    hint: "A specific cutscene or story beat within a chapter. Scenes change when the location shifts, time jumps, or a new story moment begins. Give it a number or a short name. Centered and underlined automatically.",
+    placeholder: "Scene 1: The Awakening",
   },
   "setting": {
-    label: "Setting",
+    label: "Location",
     color: "#60a5fa",
-    hint: "Describe what the stage looks like — furniture, atmosphere, lighting. This describes the space before anything happens. Formatted as 'SETTING: ...' automatically.",
-    placeholder: "A dimly lit tavern. Wooden tables and flickering candles. A door stage left.",
+    hint: "Where this scene takes place. Describe the environment — the level, area, time of day, and atmosphere. Think of this as briefing the level designer and cinematics team. Formatted as 'SETTING: ...' automatically.",
+    placeholder: "INT. ABANDONED RESEARCH FACILITY - NIGHT. Flickering fluorescent lights. Overturned equipment. Emergency sirens in the distance.",
   },
   "at-rise": {
-    label: "At Rise",
+    label: "Opens On",
     color: "#34d399",
-    hint: "What is happening the exact moment the curtain rises or the scene begins. Who is on stage and what are they doing? Formatted as 'AT RISE: ...' automatically.",
-    placeholder: "GARETH sits alone at the bar, nursing a drink. The room is empty.",
+    hint: "What the player sees and hears the instant this scene begins. Set the mood immediately — who is on screen, what are they doing, what is the camera showing? Formatted as 'AT RISE: ...' automatically.",
+    placeholder: "KIRA crawls through a ventilation shaft, flashlight clenched in her teeth. She stops and peers through a grate below.",
   },
   "character": {
     label: "Character",
     color: "#c084fc",
-    hint: "The name of the character who is about to speak. Always centered and in ALL CAPS. If they continue after a stage direction, write their name followed by (cont.).",
-    placeholder: "CHARACTER",
+    hint: "The name of the character who is about to speak — an NPC, the player character, a narrator, or even a radio voice. Always centered and in ALL CAPS. Add (V.O.) for voiceover or (O.S.) for off-screen. Add (cont.) if continuing after a Direction.",
+    placeholder: "KIRA",
   },
   "parenthetical": {
-    label: "Parenthetical",
+    label: "Delivery",
     color: "#f472b6",
-    hint: "A very brief acting note placed between the character name and their line. E.g. 'quietly' or 'to SARA'. Keep it short — actors need room to interpret. Parentheses are added automatically.",
-    placeholder: "quietly",
+    hint: "A brief note to the voice actor on how to deliver the line — e.g. 'panicked', 'into radio', 'barely a whisper'. Keep it very short. Voice actors need room to interpret; over-directing kills the performance. Parentheses are added automatically.",
+    placeholder: "into radio, hushed",
   },
   "dialogue": {
-    label: "Dialogue",
+    label: "Line",
     color: "#94a3b8",
-    hint: "The words a character speaks out loud. Write naturally — this runs the full width of the page. Think about how an actor would say these words aloud.",
-    placeholder: "What do you mean it's gone?",
+    hint: "The actual words spoken by the character. Write naturally — read it aloud to hear how it sounds. This is what the voice actor records and what appears in subtitles. Runs the full width of the page.",
+    placeholder: "They already know we're here. We have maybe two minutes before this whole wing locks down.",
   },
   "stage-direction": {
-    label: "Stage Direction",
+    label: "Direction",
     color: "#4ade80",
-    hint: "Describes a physical action or event on stage. Write character names in ALL CAPS. Keep it brief — give actors the key action, not every detail. Parentheses and italic formatting are added automatically.",
-    placeholder: "GARETH slams his fist on the bar and stands.",
+    hint: "Describes what happens on screen — character actions, camera moves, environmental events, gameplay transitions, or cinematic beats. Write character names in ALL CAPS. Keep it lean: cinematics teams fill in the details. Parentheses and italics are added automatically.",
+    placeholder: "KIRA drops from the vent. A GUARD rounds the corner and stops. They stare at each other.",
   },
 };
 
@@ -113,13 +113,13 @@ function makeId() {
 function defaultData(): ScriptData {
   return {
     title: "Untitled Script",
-    subtitle: "A Play in One Act",
+    subtitle: "Game Narrative Script",
     author: "",
     blocks: [
-      { id: makeId(), type: "act",     text: "ACT I"   },
-      { id: makeId(), type: "scene",   text: "Scene 1" },
-      { id: makeId(), type: "setting", text: ""        },
-      { id: makeId(), type: "at-rise", text: ""        },
+      { id: makeId(), type: "act",     text: "CHAPTER 1"   },
+      { id: makeId(), type: "scene",   text: "Scene 1"     },
+      { id: makeId(), type: "setting", text: ""            },
+      { id: makeId(), type: "at-rise", text: ""            },
     ],
   };
 }
@@ -308,7 +308,7 @@ export default function ScriptEditor() {
           <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700 shrink-0">
             <div className="flex items-center gap-2 text-sm font-semibold text-neutral-200">
               <BookOpen size={14} />
-              Script Format Guide
+              Game Script Guide
             </div>
             <button onClick={() => setShowGuide(false)} className="text-neutral-500 hover:text-neutral-300 transition-colors">
               <X size={14} />
@@ -354,8 +354,11 @@ export default function ScriptEditor() {
                 ["Shift+Enter", "Adds a new line within the current block"],
                 ["Backspace", "On an empty block, deletes it"],
                 ["Type selector", "Click any colored label above a focused block to change its type"],
-                ["Parentheticals", "Use sparingly — actors prefer to make their own choices"],
-                ["cont.", "Write CHARACTER (cont.) when continuing after a stage direction"],
+                ["V.O.", "Add (V.O.) after a name for voiceover — heard but not seen on screen"],
+                ["O.S.", "Add (O.S.) for off-screen — the character is nearby but not visible"],
+                ["Delivery", "Keep delivery notes very short — voice actors interpret best with minimal direction"],
+                ["cont.", "Write CHARACTER (cont.) after a Direction if the same character keeps speaking"],
+                ["Direction", "Describe only what the camera or player sees — not internal thoughts"],
               ].map(([key, desc]) => (
                 <div key={key} className="flex gap-2 text-xs">
                   <span className="text-neutral-300 font-medium shrink-0">{key}:</span>

@@ -7,14 +7,16 @@ import { Plus, X } from "lucide-react";
 const STORAGE_KEY = "gameref_progress_v1";
 
 const CARD_COLORS = [
-  { strip: "#737373" },  // gray
-  { strip: "#f59e0b" },  // amber
-  { strip: "#ec4899" },  // pink
-  { strip: "#3b82f6" },  // blue
-  { strip: "#22c55e" },  // green
-  { strip: "#a855f7" },  // purple
-  { strip: "#f97316" },  // orange
+  { strip: "#737373" },  // 0: gray
+  { strip: "#f59e0b" },  // 1: amber
+  { strip: "#ec4899" },  // 2: pink
+  { strip: "#3b82f6" },  // 3: blue
+  { strip: "#22c55e" },  // 4: green
+  { strip: "#a855f7" },  // 5: purple
+  { strip: "#f97316" },  // 6: orange
 ];
+
+const DEFAULT_COLOR_LABELS = ["Misc", "", "", "Code", "Art", "Audio", "Other"];
 
 const DEFAULT_COLUMNS: Column[] = [
   { id: "backlog",  title: "Backlog" },
@@ -39,6 +41,7 @@ type Column = {
 type BoardState = {
   columns: Column[];
   cards: Record<string, Card[]>;
+  colorLabels: string[];
 };
 
 function makeId() {
@@ -49,6 +52,7 @@ function defaultState(): BoardState {
   return {
     columns: DEFAULT_COLUMNS,
     cards: Object.fromEntries(DEFAULT_COLUMNS.map((c) => [c.id, []])),
+    colorLabels: DEFAULT_COLOR_LABELS,
   };
 }
 
@@ -63,7 +67,13 @@ export default function ProgressBoard() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      setBoard(raw ? JSON.parse(raw) : defaultState());
+      if (raw) {
+        const parsed = JSON.parse(raw) as BoardState;
+        if (!parsed.colorLabels) parsed.colorLabels = DEFAULT_COLOR_LABELS;
+        setBoard(parsed);
+      } else {
+        setBoard(defaultState());
+      }
     } catch {
       setBoard(defaultState());
     }
@@ -141,6 +151,14 @@ export default function ProgressBoard() {
     setEditingCard(null);
   }
 
+  function updateColorLabel(idx: number, label: string) {
+    update((prev) => {
+      const colorLabels = [...prev.colorLabels];
+      colorLabels[idx] = label;
+      return { ...prev, colorLabels };
+    });
+  }
+
   if (!board) return null;
 
   return (
@@ -174,48 +192,57 @@ export default function ProgressBoard() {
                         snapshot.isDraggingOver ? "bg-neutral-700/20" : ""
                       }`}
                     >
-                      {colCards.map((card, index) => (
-                        <Draggable
-                          key={card.id}
-                          draggableId={card.id}
-                          index={index}
-                        >
-                          {(drag, dragSnapshot) => (
-                            <div
-                              ref={drag.innerRef}
-                              {...drag.draggableProps}
-                              {...drag.dragHandleProps}
-                              onClick={() =>
-                                setEditingCard({ colId: col.id, card })
-                              }
-                              className={`rounded-lg cursor-pointer select-none transition-all overflow-hidden ${
-                                dragSnapshot.isDragging
-                                  ? "shadow-2xl shadow-black/60 opacity-95 rotate-1"
-                                  : "hover:brightness-110"
-                              }`}
-                              style={{
-                                background: `color-mix(in srgb, ${CARD_COLORS[card.colorIdx]?.strip ?? CARD_COLORS[0].strip} 18%, #e8e8e8)`,
-                                borderLeft: `4px solid ${
-                                  CARD_COLORS[card.colorIdx]?.strip ??
-                                  CARD_COLORS[0].strip
-                                }`,
-                                ...drag.draggableProps.style,
-                              }}
-                            >
-                              <div className="px-3 py-2.5">
-                                <p className="text-sm text-neutral-900 leading-snug font-medium">
-                                  {card.title}
-                                </p>
-                                {card.details && (
-                                  <p className="text-xs text-neutral-600 mt-1 line-clamp-2 leading-relaxed">
-                                    {card.details}
+                      {colCards.map((card, index) => {
+                        const strip = CARD_COLORS[card.colorIdx]?.strip ?? CARD_COLORS[0].strip;
+                        const label = board.colorLabels[card.colorIdx] ?? "";
+                        return (
+                          <Draggable
+                            key={card.id}
+                            draggableId={card.id}
+                            index={index}
+                          >
+                            {(drag, dragSnapshot) => (
+                              <div
+                                ref={drag.innerRef}
+                                {...drag.draggableProps}
+                                {...drag.dragHandleProps}
+                                onClick={() =>
+                                  setEditingCard({ colId: col.id, card })
+                                }
+                                className={`rounded-lg cursor-pointer select-none transition-all overflow-hidden ${
+                                  dragSnapshot.isDragging
+                                    ? "shadow-2xl shadow-black/60 opacity-95 rotate-1"
+                                    : "hover:brightness-110"
+                                }`}
+                                style={{
+                                  background: `color-mix(in srgb, ${strip} 18%, #e8e8e8)`,
+                                  borderLeft: `4px solid ${strip}`,
+                                  ...drag.draggableProps.style,
+                                }}
+                              >
+                                <div className="px-3 py-2.5">
+                                  {label && (
+                                    <p
+                                      className="text-xs font-semibold uppercase tracking-wider mb-1"
+                                      style={{ color: strip, fontSize: 10 }}
+                                    >
+                                      {label}
+                                    </p>
+                                  )}
+                                  <p className="text-sm text-neutral-900 leading-snug font-medium">
+                                    {card.title}
                                   </p>
-                                )}
+                                  {card.details && (
+                                    <p className="text-xs text-neutral-600 mt-1 line-clamp-2 leading-relaxed">
+                                      {card.details}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
+                            )}
+                          </Draggable>
+                        );
+                      })}
                       {provided.placeholder}
                     </div>
                   )}
@@ -280,10 +307,12 @@ export default function ProgressBoard() {
       {editingCard && (
         <CardModal
           card={editingCard.card}
+          colorLabels={board.colorLabels}
           onUpdate={(updated) => {
             updateCard(editingCard.colId, updated);
             setEditingCard({ ...editingCard, card: updated });
           }}
+          onUpdateLabel={updateColorLabel}
           onDelete={() => deleteCard(editingCard.colId, editingCard.card.id)}
           onClose={() => setEditingCard(null)}
         />
@@ -296,12 +325,16 @@ export default function ProgressBoard() {
 
 function CardModal({
   card,
+  colorLabels,
   onUpdate,
+  onUpdateLabel,
   onDelete,
   onClose,
 }: {
   card: Card;
+  colorLabels: string[];
   onUpdate: (card: Card) => void;
+  onUpdateLabel: (idx: number, label: string) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -333,7 +366,7 @@ function CardModal({
         style={{ borderTop: `4px solid ${strip}` }}
       >
         {/* Header row: color picker + close */}
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
+        <div className="flex items-center justify-between px-4 pt-4 pb-1">
           <div className="flex items-center gap-2">
             {CARD_COLORS.map((c, i) => (
               <button
@@ -348,7 +381,7 @@ function CardModal({
                     : "hover:scale-110 opacity-70 hover:opacity-100"
                 }`}
                 style={{ background: c.strip }}
-                title={`Color ${i + 1}`}
+                title={colorLabels[i] || `Color ${i + 1}`}
               />
             ))}
           </div>
@@ -358,6 +391,17 @@ function CardModal({
           >
             <X size={16} />
           </button>
+        </div>
+
+        {/* Editable label for current color */}
+        <div className="flex items-center gap-2 px-4 pb-3">
+          <div className="w-2 h-2 rounded-full shrink-0" style={{ background: strip }} />
+          <input
+            value={colorLabels[colorIdx] ?? ""}
+            onChange={(e) => onUpdateLabel(colorIdx, e.target.value)}
+            placeholder="Label this color…"
+            className="text-xs text-neutral-400 bg-transparent outline-none border-b border-transparent focus:border-neutral-600 flex-1 pb-0.5 placeholder:text-neutral-600 transition-colors"
+          />
         </div>
 
         <div className="px-4 pb-4 flex flex-col gap-4">

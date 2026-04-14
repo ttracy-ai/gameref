@@ -53,7 +53,10 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
   useEffect(() => {
     setLoading(true);
     fetch(`/api/projects/${projectId}/members`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
       .then((d) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false));

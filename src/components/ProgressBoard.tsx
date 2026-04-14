@@ -152,7 +152,7 @@ export default function ProgressBoard() {
             return (
               <div
                 key={col.id}
-                className="flex flex-col shrink-0 w-64 rounded-xl bg-neutral-800 max-h-full"
+                className="flex flex-col flex-1 min-w-0 rounded-xl bg-neutral-800 max-h-full"
               >
                 {/* Column header */}
                 <div className="flex items-center justify-between px-3 py-2.5 shrink-0">

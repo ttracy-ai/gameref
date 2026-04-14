@@ -1,11 +1,12 @@
 "use client";
 
-import { ScrollText, Images, ChevronLeft, ChevronRight, BarChart2, Code2, Map, Users } from "lucide-react";
+import { ScrollText, Images, ChevronLeft, ChevronRight, BarChart2, Code2, Map, Users, PenLine } from "lucide-react";
 import { useState } from "react";
 
 import RefBoard from "@/components/RefBoard";
 import GDDEditor from "@/components/GDDEditor";
 import ProgressBoard from "@/components/ProgressBoard";
+import ScriptEditor from "@/components/ScriptEditor";
 
 type RibbonItem = {
   id: string;
@@ -43,6 +44,11 @@ const ribbonItems: RibbonItem[] = [
     id: "team",
     icon: <Users size={22} />,
     label: "Team / Credits",
+  },
+  {
+    id: "writing",
+    icon: <PenLine size={22} />,
+    label: "Writing",
   },
 ];
 
@@ -138,6 +144,8 @@ export default function CanvasPage() {
         <Placeholder label="Map Layout" />
       ) : active === "team" ? (
         <Placeholder label="Team / Credits" />
+      ) : active === "writing" ? (
+        <ScriptEditor />
       ) : (
         <main className="flex-1 flex items-center justify-center text-neutral-600 select-none text-sm">
           Select a tool to get started

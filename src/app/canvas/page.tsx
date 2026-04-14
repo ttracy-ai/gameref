@@ -2,9 +2,10 @@
 
 import {
   ScrollText, Images, ChevronLeft, ChevronRight, BarChart2,
-  Code2, Map, Users, PenLine, FolderOpen,
+  Code2, Map, Users, PenLine, FolderOpen, LogOut,
 } from "lucide-react";
 import { useState } from "react";
+import { signOut } from "next-auth/react";
 
 import RefBoard from "@/components/RefBoard";
 import GDDEditor from "@/components/GDDEditor";
@@ -139,11 +140,16 @@ export default function CanvasPage() {
           </div>
         )}
 
-        {/* Version */}
+        {/* Logout */}
         {!collapsed && (
-          <span className="absolute bottom-10 text-neutral-600 select-none" style={{ fontSize: 9 }}>
-            {process.env.NEXT_PUBLIC_APP_VERSION}
-          </span>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            title="Sign out"
+            aria-label="Sign out"
+            className="absolute bottom-10 flex items-center justify-center w-10 h-10 rounded-lg text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700 transition-colors"
+          >
+            <LogOut size={18} />
+          </button>
         )}
 
         {/* Collapse toggle */}

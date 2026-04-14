@@ -18,9 +18,16 @@ type Method = {
   descriptions: Description[];
 };
 
+type Variable = {
+  id: string;
+  name: string;
+  descriptions: Description[];
+};
+
 type GameObject = {
   id: string;
   name: string;
+  variables: Variable[];
   methods: Method[];
 };
 
@@ -43,6 +50,10 @@ export default function CodeLayout() {
         // Migrate: ensure every object has a methods array, every method has a descriptions array
         const normalized = parsed.map((o: GameObject) => ({
           ...o,
+          variables: (o.variables ?? []).map((v: Variable) => ({
+            ...v,
+            descriptions: v.descriptions ?? [],
+          })),
           methods: (o.methods ?? []).map((m: Method) => ({
             ...m,
             descriptions: m.descriptions ?? [],
@@ -80,7 +91,7 @@ export default function CodeLayout() {
 
   function addObject() {
     const id = makeId();
-    update((prev) => [...prev, { id, name: "", methods: [] }]);
+    update((prev) => [...prev, { id, name: "", variables: [], methods: [] }]);
     setPendingFocusId(id);
   }
 
@@ -96,6 +107,86 @@ export default function CodeLayout() {
       if (focusTarget) setPendingFocusId(focusTarget);
       return next;
     });
+  }
+
+  // ── Variable CRUD ───────────────────────────────────────────────────────────
+
+  function addVariable(objectId: string) {
+    const id = makeId();
+    update((prev) => prev.map((o) =>
+      o.id === objectId
+        ? { ...o, variables: [...o.variables, { id, name: "", descriptions: [] }] }
+        : o
+    ));
+    setPendingFocusId(id);
+  }
+
+  function updateVariableName(objectId: string, variableId: string, name: string) {
+    update((prev) => prev.map((o) =>
+      o.id === objectId
+        ? { ...o, variables: o.variables.map((v) => v.id === variableId ? { ...v, name } : v) }
+        : o
+    ));
+  }
+
+  function deleteVariable(objectId: string, variableId: string) {
+    update((prev) => prev.map((o) => {
+      if (o.id !== objectId) return o;
+      const idx = o.variables.findIndex((v) => v.id === variableId);
+      const next = o.variables.filter((v) => v.id !== variableId);
+      const focusTarget = next[idx - 1]?.id ?? next[0]?.id ?? objectId;
+      setPendingFocusId(focusTarget);
+      return { ...o, variables: next };
+    }));
+  }
+
+  function addVariableDescription(objectId: string, variableId: string) {
+    const id = makeId();
+    update((prev) => prev.map((o) =>
+      o.id === objectId
+        ? {
+            ...o,
+            variables: o.variables.map((v) =>
+              v.id === variableId
+                ? { ...v, descriptions: [...v.descriptions, { id, text: "" }] }
+                : v
+            ),
+          }
+        : o
+    ));
+    setPendingFocusId(id);
+  }
+
+  function updateVariableDescription(objectId: string, variableId: string, descId: string, text: string) {
+    update((prev) => prev.map((o) =>
+      o.id === objectId
+        ? {
+            ...o,
+            variables: o.variables.map((v) =>
+              v.id === variableId
+                ? { ...v, descriptions: v.descriptions.map((d) => d.id === descId ? { ...d, text } : d) }
+                : v
+            ),
+          }
+        : o
+    ));
+  }
+
+  function deleteVariableDescription(objectId: string, variableId: string, descId: string) {
+    update((prev) => prev.map((o) => {
+      if (o.id !== objectId) return o;
+      return {
+        ...o,
+        variables: o.variables.map((v) => {
+          if (v.id !== variableId) return v;
+          const idx = v.descriptions.findIndex((d) => d.id === descId);
+          const next = v.descriptions.filter((d) => d.id !== descId);
+          const focusTarget = next[idx - 1]?.id ?? next[0]?.id ?? variableId;
+          setPendingFocusId(focusTarget);
+          return { ...v, descriptions: next };
+        }),
+      };
+    }));
   }
 
   // ── Method CRUD ─────────────────────────────────────────────────────────────
@@ -252,6 +343,72 @@ export default function CodeLayout() {
                       placeholder="GameObjectName"
                       className="flex-1 bg-transparent text-neutral-200 font-semibold text-sm outline-none placeholder:text-neutral-600"
                     />
+                  </div>
+
+                  {/* Variables */}
+                  {obj.variables.map((variable) => (
+                    <div key={variable.id} className="group/variable">
+
+                      {/* Variable row */}
+                      <div className="flex items-center gap-3 px-5 py-0.5">
+                        <span className="w-6 shrink-0" />
+                        <span className="w-5 shrink-0" />
+                        <input
+                          ref={(el) => { inputRefs.current[variable.id] = el; }}
+                          value={variable.name}
+                          onChange={(e) => updateVariableName(obj.id, variable.id, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); if (variable.descriptions.length === 0) addVariableDescription(obj.id, variable.id); }
+                            if (e.key === "Backspace" && variable.name === "") { e.preventDefault(); deleteVariable(obj.id, variable.id); }
+                          }}
+                          placeholder="variableName"
+                          className="flex-1 bg-transparent text-emerald-400 text-sm outline-none placeholder:text-neutral-700 font-mono"
+                        />
+                        {/* Add description — hover only, hidden if one already exists */}
+                        {variable.descriptions.length === 0 && (
+                          <button
+                            onClick={() => addVariableDescription(obj.id, variable.id)}
+                            className="opacity-0 group-hover/variable:opacity-100 text-xs text-neutral-600 hover:text-neutral-400 transition-all flex items-center gap-1 shrink-0"
+                          >
+                            <Plus size={10} />
+                            add description
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Variable description (max one) */}
+                      {variable.descriptions.map((desc) => (
+                        <div key={desc.id} className="flex items-start gap-3 px-5 py-0.5">
+                          <span className="w-6 shrink-0" />
+                          <span className="w-5 shrink-0" />
+                          <span className="w-5 shrink-0" />
+                          <input
+                            ref={(el) => { inputRefs.current[desc.id] = el; }}
+                            value={desc.text}
+                            onChange={(e) => updateVariableDescription(obj.id, variable.id, desc.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Backspace" && desc.text === "") { e.preventDefault(); deleteVariableDescription(obj.id, variable.id, desc.id); }
+                            }}
+                            placeholder="Describe what this variable holds…"
+                            className="flex-1 bg-transparent text-neutral-500 text-sm outline-none placeholder:text-neutral-700 italic"
+                          />
+                        </div>
+                      ))}
+
+                    </div>
+                  ))}
+
+                  {/* Add variable */}
+                  <div className="flex items-center gap-3 px-5 py-0.5 mt-0.5">
+                    <span className="w-6 shrink-0" />
+                    <span className="w-5 shrink-0" />
+                    <button
+                      onClick={() => addVariable(obj.id)}
+                      className="text-xs text-neutral-700 hover:text-neutral-500 transition-colors flex items-center gap-1"
+                    >
+                      <Plus size={10} />
+                      add variable
+                    </button>
                   </div>
 
                   {/* Methods */}

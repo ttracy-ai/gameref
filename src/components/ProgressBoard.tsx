@@ -18,6 +18,10 @@ const CARD_COLORS = [
 
 const DEFAULT_COLOR_LABELS = ["Misc", "", "", "Code", "Art", "Audio", "Other"];
 
+// Display order for the color swatches in the card modal.
+// Indices reference CARD_COLORS: 0=gray,1=amber,2=pink,3=blue,4=green,5=purple,6=orange
+const SWATCH_ORDER = [0, 4, 3, 5, 6, 1, 2]; // gray, green, blue, purple, orange, amber, pink
+
 const DEFAULT_COLUMNS: Column[] = [
   { id: "backlog",  title: "Backlog" },
   { id: "todo",     title: "To Do" },
@@ -371,7 +375,7 @@ function CardModal({
         {/* Header row: color picker + close */}
         <div className="flex items-center justify-between px-4 pt-4 pb-1">
           <div className="flex items-center gap-2">
-            {CARD_COLORS.map((c, i) => (
+            {SWATCH_ORDER.map((i) => { const c = CARD_COLORS[i]; return (
               <button
                 key={i}
                 onClick={() => {
@@ -386,7 +390,7 @@ function CardModal({
                 style={{ background: c.strip }}
                 title={colorLabels[i] || `Color ${i + 1}`}
               />
-            ))}
+            ); })}
           </div>
           <button
             onClick={saveAndClose}

@@ -96,6 +96,19 @@ export default function CanvasPage() {
         {!collapsed && (
           <div className="flex flex-col items-center gap-1 w-full py-3">
 
+            {/* Logo */}
+            <div
+              className="flex items-center justify-center w-8 h-8 rounded-lg mb-1"
+              style={{
+                background: "rgba(132,204,22,0.07)",
+                border: "1px solid rgba(132,204,22,0.2)",
+                boxShadow: "0 0 10px rgba(132,204,22,0.1)",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.png" alt="Plan A Project" className="w-5 h-5 object-contain" />
+            </div>
+
             {/* Projects — always accessible */}
             <button
               onClick={() => setActive("projects")}

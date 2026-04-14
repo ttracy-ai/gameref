@@ -1,4 +1,5 @@
 import { signIn } from "@/auth";
+import Image from "next/image";
 
 export default function LoginPage() {
   return (
@@ -7,10 +8,12 @@ export default function LoginPage() {
 
         {/* Logo + branding */}
         <div className="mb-10 flex flex-col items-center gap-4">
-          <img
+          <Image
             src="/logo.png"
             alt="Plan A Project logo"
-            className="w-20 h-20 object-contain"
+            width={80}
+            height={80}
+            className="object-contain"
           />
           <div className="text-center">
             <h1 className="text-3xl font-bold tracking-tight text-neutral-100">

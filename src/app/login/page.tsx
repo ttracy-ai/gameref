@@ -4,77 +4,166 @@ const LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQIAAAECCAYAAAAVT9lQ
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-900 px-4">
-      <div className="w-full max-w-sm">
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ background: "radial-gradient(ellipse at 50% -20%, #1c2a0e 0%, #0d1208 50%, #080c06 100%)" }}
+    >
+      {/* Grid overlay */}
+      <div
+        className="pointer-events-none fixed inset-0 opacity-40"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(132,204,22,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(132,204,22,0.04) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+        }}
+      />
 
-        {/* Logo + branding */}
-        <div className="mb-10 flex flex-col items-center gap-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LOGO} alt="Plan A Project logo" className="w-20 h-20 object-contain" />
-          <div className="text-center">
-            <h1 className="text-3xl font-bold tracking-tight text-neutral-100">
-              Plan A Project
-            </h1>
-            <p className="mt-1 text-sm text-neutral-500 tracking-wide">
-              planaproject.io
-            </p>
-          </div>
-          <p className="text-sm text-neutral-400 text-center leading-relaxed">
-            Your all-in-one workspace for game&amp;nbsp;development.
-          </p>
-        </div>
+      {/* Vignette */}
+      <div
+        className="pointer-events-none fixed inset-0"
+        style={{ background: "radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.7) 100%)" }}
+      />
+
+      <div className="relative w-full max-w-sm">
+
+        {/* Top accent line */}
+        <div
+          className="absolute top-0 inset-x-8 h-px rounded-full"
+          style={{ background: "linear-gradient(90deg, transparent, rgba(132,204,22,0.8), transparent)" }}
+        />
 
         {/* Card */}
-        <div className="bg-neutral-800 border border-neutral-700 rounded-2xl px-8 py-8 shadow-2xl flex flex-col gap-3">
+        <div
+          className="relative rounded-2xl px-8 pt-10 pb-8"
+          style={{
+            background: "linear-gradient(160deg, rgba(20,28,12,0.95) 0%, rgba(12,18,8,0.98) 100%)",
+            border: "1px solid rgba(132,204,22,0.12)",
+            boxShadow: "0 0 0 1px rgba(0,0,0,0.5), 0 32px 64px rgba(0,0,0,0.6), 0 0 80px rgba(132,204,22,0.05)",
+          }}
+        >
+          {/* Logo */}
+          <div className="flex flex-col items-center mb-8">
+            <div
+              className="mb-5 p-3.5 rounded-xl"
+              style={{
+                background: "rgba(132,204,22,0.07)",
+                border: "1px solid rgba(132,204,22,0.18)",
+                boxShadow: "0 0 20px rgba(132,204,22,0.12), inset 0 1px 0 rgba(132,204,22,0.1)",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={LOGO} alt="Plan A Project" className="w-12 h-12 object-contain" />
+            </div>
 
-          <p className="text-xs text-neutral-500 text-center uppercase tracking-widest mb-1">
-            Sign in to continue
+            <h1 className="text-2xl font-bold tracking-tight text-slate-100">
+              Plan A Project
+            </h1>
+            <p
+              className="mt-0.5 text-xs font-semibold tracking-[0.2em] uppercase"
+              style={{ color: "rgba(132,204,22,0.65)" }}
+            >
+              planaproject.io
+            </p>
+            <p className="mt-2.5 text-xs text-slate-600 text-center leading-relaxed">
+              Game development, organized.
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.05)" }} />
+            <span className="text-[10px] text-slate-700 uppercase tracking-[0.15em]">continue with</span>
+            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.05)" }} />
+          </div>
+
+          {/* Sign-in buttons */}
+          <div className="flex flex-col gap-2.5">
+
+            {/* Google */}
+            <form
+              action={async () => {
+                "use server";
+                await signIn("google", { redirectTo: "/canvas" });
+              }}
+            >
+              <button
+                type="submit"
+                className="w-full group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition-all duration-200"
+                style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.07)",
+                }}
+                onMouseEnter={e => {
+                  const el = e.currentTarget;
+                  el.style.background = "rgba(132,204,22,0.06)";
+                  el.style.borderColor = "rgba(132,204,22,0.2)";
+                  el.style.color = "#e2e8d0";
+                }}
+                onMouseLeave={e => {
+                  const el = e.currentTarget;
+                  el.style.background = "rgba(255,255,255,0.03)";
+                  el.style.borderColor = "rgba(255,255,255,0.07)";
+                  el.style.color = "";
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true" className="shrink-0">
+                  <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+                  <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+                  <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
+                  <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z"/>
+                </svg>
+                <span className="flex-1 text-left">Google</span>
+                <span className="text-slate-700 text-xs">→</span>
+              </button>
+            </form>
+
+            {/* Discord */}
+            <form
+              action={async () => {
+                "use server";
+                await signIn("discord", { redirectTo: "/canvas" });
+              }}
+            >
+              <button
+                type="submit"
+                className="w-full group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition-all duration-200"
+                style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.07)",
+                }}
+                onMouseEnter={e => {
+                  const el = e.currentTarget;
+                  el.style.background = "rgba(132,204,22,0.06)";
+                  el.style.borderColor = "rgba(132,204,22,0.2)";
+                  el.style.color = "#e2e8d0";
+                }}
+                onMouseLeave={e => {
+                  const el = e.currentTarget;
+                  el.style.background = "rgba(255,255,255,0.03)";
+                  el.style.borderColor = "rgba(255,255,255,0.07)";
+                  el.style.color = "";
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 127.14 96.36" aria-hidden="true" fill="#5865F2" className="shrink-0">
+                  <path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z"/>
+                </svg>
+                <span className="flex-1 text-left">Discord</span>
+                <span className="text-slate-700 text-xs">→</span>
+              </button>
+            </form>
+
+          </div>
+
+          <p className="mt-6 text-center text-[11px] text-slate-700">
+            By signing in you agree to our terms of service.
           </p>
-
-          {/* Google */}
-          <form
-            action={async () => {
-              "use server";
-              await signIn("google", { redirectTo: "/canvas" });
-            }}
-          >
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center gap-3 rounded-xl bg-white hover:bg-neutral-100 px-4 py-3 text-sm font-semibold text-neutral-900 transition-colors shadow-sm"
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-                <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
-                <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
-                <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
-                <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z"/>
-              </svg>
-              Sign in with Google
-            </button>
-          </form>
-
-          {/* Discord */}
-          <form
-            action={async () => {
-              "use server";
-              await signIn("discord", { redirectTo: "/canvas" });
-            }}
-          >
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center gap-3 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] px-4 py-3 text-sm font-semibold text-white transition-colors shadow-sm"
-            >
-              <svg width="20" height="20" viewBox="0 0 127.14 96.36" aria-hidden="true" fill="currentColor">
-                <path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z"/>
-              </svg>
-              Sign in with Discord
-            </button>
-          </form>
-
         </div>
 
-        <p className="mt-6 text-center text-xs text-neutral-600">
-          By signing in, you agree to our terms of service.
-        </p>
+        {/* Bottom glow */}
+        <div
+          className="absolute -bottom-px inset-x-12 h-px"
+          style={{ background: "linear-gradient(90deg, transparent, rgba(132,204,22,0.3), transparent)" }}
+        />
 
       </div>
     </div>

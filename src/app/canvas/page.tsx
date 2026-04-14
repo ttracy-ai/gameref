@@ -32,7 +32,7 @@ const ribbonItems: RibbonItem[] = [
 ];
 
 export default function CanvasPage() {
-  const [active, setActive] = useState<string | null>(null);
+  const [active, setActive] = useState<string | null>("progress");
   const [collapsed, setCollapsed] = useState(false);
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
 

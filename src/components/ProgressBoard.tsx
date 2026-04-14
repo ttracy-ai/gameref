@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-import { Plus, X } from "lucide-react";
+import { Plus, X, ExternalLink, Images } from "lucide-react";
 
 const STORAGE_KEY = "gameref_progress_v1";
 
@@ -43,6 +43,7 @@ type Card = {
   details: string;
   colorIdx: number;
   todos: TodoItem[];
+  imageRefs: string[];
 };
 
 type Column = {
@@ -70,7 +71,7 @@ function defaultState(): BoardState {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function ProgressBoard() {
+export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (imageId: string) => void }) {
   const [board, setBoard] = useState<BoardState | null>(null);
   const [editingCard, setEditingCard] = useState<{ colId: string; card: Card } | null>(null);
   const [addingTo, setAddingTo] = useState<string | null>(null);
@@ -133,7 +134,7 @@ export default function ProgressBoard() {
       setAddingTo(null);
       return;
     }
-    const card: Card = { id: makeId(), title, shortDetails: "", details: "", colorIdx: 0, todos: [] };
+    const card: Card = { id: makeId(), title, shortDetails: "", details: "", colorIdx: 0, todos: [], imageRefs: [] };
     update((prev) => ({
       ...prev,
       cards: { ...prev.cards, [colId]: [...(prev.cards[colId] ?? []), card] },
@@ -325,6 +326,7 @@ export default function ProgressBoard() {
             setEditingCard({ ...editingCard, card: updated });
           }}
           onUpdateLabel={updateColorLabel}
+          onImageRefClick={onImageRefClick}
           onDelete={() => deleteCard(editingCard.colId, editingCard.card.id)}
           onClose={() => setEditingCard(null)}
         />
@@ -335,11 +337,14 @@ export default function ProgressBoard() {
 
 // ─── Card detail modal ────────────────────────────────────────────────────────
 
+type RefBoardImage = { id: string; src: string };
+
 function CardModal({
   card,
   colorLabels,
   onUpdate,
   onUpdateLabel,
+  onImageRefClick,
   onDelete,
   onClose,
 }: {
@@ -347,6 +352,7 @@ function CardModal({
   colorLabels: string[];
   onUpdate: (card: Card) => void;
   onUpdateLabel: (idx: number, label: string) => void;
+  onImageRefClick?: (imageId: string) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -356,7 +362,17 @@ function CardModal({
   const [colorIdx, setColorIdx] = useState(card.colorIdx);
   const [todos, setTodos] = useState<TodoItem[]>(card.todos ?? []);
   const [newTodo, setNewTodo] = useState("");
+  const [imageRefs, setImageRefs] = useState<string[]>(card.imageRefs ?? []);
+  const [allImages, setAllImages] = useState<RefBoardImage[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("gameref_refboard_v1");
+      if (raw) setAllImages(JSON.parse(raw) as RefBoardImage[]);
+    } catch {}
+  }, []);
 
   function saveAndClose() {
     onUpdate({
@@ -366,6 +382,7 @@ function CardModal({
       details,
       colorIdx,
       todos,
+      imageRefs,
     });
     onClose();
   }
@@ -393,7 +410,7 @@ function CardModal({
       onClick={saveAndClose}
     >
       <div
-        className="w-full max-w-lg mx-4 bg-neutral-800 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-lg mx-4 bg-neutral-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
         style={{ borderTop: `4px solid ${strip}` }}
       >
@@ -436,7 +453,7 @@ function CardModal({
           />
         </div>
 
-        <div className="px-4 pb-4 flex flex-col gap-4">
+        <div className="px-4 pb-4 flex flex-col gap-4 overflow-y-auto">
           {/* Title */}
           <input
             value={title}
@@ -533,6 +550,94 @@ function CardModal({
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Image references */}
+          <div>
+            <label className="text-xs text-neutral-500 uppercase tracking-wider mb-2 block">
+              Reference Images
+            </label>
+
+            {/* Chips for added refs */}
+            {imageRefs.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {imageRefs.map((imgId) => {
+                  const img = allImages.find((i) => i.id === imgId);
+                  return (
+                    <div
+                      key={imgId}
+                      className="group flex items-center gap-1.5 bg-neutral-700 rounded-md px-2 py-1"
+                    >
+                      {img ? (
+                        <img src={img.src} className="h-6 w-auto max-w-[40px] object-cover rounded" />
+                      ) : (
+                        <div className="h-6 w-6 bg-neutral-600 rounded" />
+                      )}
+                      <span className="text-xs text-sky-300">Ref Board</span>
+                      {onImageRefClick && (
+                        <button
+                          onClick={() => { saveAndClose(); onImageRefClick(imgId); }}
+                          className="text-neutral-500 hover:text-neutral-200 transition-colors"
+                          title="Open in Reference Board"
+                        >
+                          <ExternalLink size={11} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setImageRefs((prev) => prev.filter((id) => id !== imgId))}
+                        className="text-neutral-600 hover:text-red-400 transition-colors"
+                        title="Remove"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Picker toggle */}
+            <button
+              onClick={() => setShowPicker((v) => !v)}
+              className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
+            >
+              <Images size={13} />
+              {showPicker ? "Hide picker" : "Add from Reference Board"}
+            </button>
+
+            {/* Image picker grid */}
+            {showPicker && (
+              <div className="mt-2 grid grid-cols-5 gap-1.5 max-h-40 overflow-y-auto bg-neutral-900 rounded-lg p-2">
+                {allImages.length === 0 && (
+                  <p className="col-span-5 text-xs text-neutral-600 text-center py-4">No images on the Reference Board yet.</p>
+                )}
+                {allImages.map((img) => {
+                  const selected = imageRefs.includes(img.id);
+                  return (
+                    <button
+                      key={img.id}
+                      onClick={() => {
+                        setImageRefs((prev) =>
+                          selected ? prev.filter((id) => id !== img.id) : [...prev, img.id]
+                        );
+                      }}
+                      className="relative rounded overflow-hidden aspect-square"
+                      style={{ outline: selected ? `2px solid ${strip}` : "2px solid transparent" }}
+                      title={selected ? "Remove" : "Add"}
+                    >
+                      <img src={img.src} className="w-full h-full object-cover" />
+                      {selected && (
+                        <div className="absolute inset-0 flex items-center justify-center" style={{ background: `${strip}55` }}>
+                          <svg width="14" height="14" viewBox="0 0 8 8" fill="none">
+                            <path d="M1.5 4L3.5 6L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 

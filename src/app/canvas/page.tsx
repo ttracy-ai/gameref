@@ -101,7 +101,7 @@ export default function CanvasPage() {
 
       {/* Main area */}
       {active === "progress" ? (
-        <ProgressBoard />
+        <ProgressBoard onImageRefClick={handleImageRefClick} />
       ) : active === "refboard" ? (
         <RefBoard
           pendingFocusId={pendingFocusId}

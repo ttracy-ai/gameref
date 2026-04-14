@@ -7,6 +7,7 @@ import RefBoard from "@/components/RefBoard";
 import GDDEditor from "@/components/GDDEditor";
 import ProgressBoard from "@/components/ProgressBoard";
 import ScriptEditor from "@/components/ScriptEditor";
+import CodeLayout from "@/components/CodeLayout";
 
 type RibbonItem = {
   id: string;
@@ -139,7 +140,7 @@ export default function CanvasPage() {
       ) : active === "gdd" ? (
         <GDDEditor onImageRefClick={handleImageRefClick} />
       ) : active === "code-layout" ? (
-        <Placeholder label="Code Layout" />
+        <CodeLayout />
       ) : active === "map-layout" ? (
         <Placeholder label="Map Layout" />
       ) : active === "team" ? (

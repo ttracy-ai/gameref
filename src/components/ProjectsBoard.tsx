@@ -1,19 +1,15 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, FolderOpen } from "lucide-react";
-
-const PROJECTS_KEY = "gameref_projects_v1";
+import { Plus, Trash2, FolderOpen, Loader2 } from "lucide-react";
 
 export type Project = {
   id: string;
   name: string;
   createdAt: string;
+  role: string;
+  ownerId: string;
 };
-
-function makeId() {
-  return Math.random().toString(36).slice(2, 10);
-}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -33,50 +29,63 @@ export default function ProjectsBoard({
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const newInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(PROJECTS_KEY);
-      setProjects(raw ? JSON.parse(raw) : []);
-    } catch {
-      setProjects([]);
-    }
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((data) => setProjects(data.projects ?? []))
+      .catch(() => setProjects([]));
   }, []);
 
   useEffect(() => {
     if (adding) newInputRef.current?.focus();
   }, [adding]);
 
-  function save(next: Project[]) {
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(next));
-  }
-
-  function createProject() {
+  async function createProject() {
     const name = newName.trim();
     if (!name) return;
-    const project: Project = {
-      id: makeId(),
-      name,
-      createdAt: new Date().toISOString(),
-    };
-    const next = [...(projects ?? []), project];
-    setProjects(next);
-    save(next);
-    setNewName("");
-    setAdding(false);
-    onOpenProject(project);
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error();
+      const project: Project = await res.json();
+      setProjects((prev) => [...(prev ?? []), project]);
+      setNewName("");
+      setAdding(false);
+      onOpenProject(project);
+    } catch {
+      setError("Failed to create project. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function deleteProject(id: string) {
-    const next = (projects ?? []).filter((p) => p.id !== id);
-    setProjects(next);
-    save(next);
-    setDeleteConfirm(null);
+  async function deleteProject(id: string) {
+    try {
+      await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      setProjects((prev) => (prev ?? []).filter((p) => p.id !== id));
+      setDeleteConfirm(null);
+    } catch {
+      setError("Failed to delete project.");
+    }
   }
 
-  if (projects === null) return null;
+  if (projects === null) {
+    return (
+      <main className="flex-1 flex items-center justify-center bg-neutral-900">
+        <Loader2 size={20} className="text-neutral-600 animate-spin" />
+      </main>
+    );
+  }
 
   return (
     <main className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-900">
@@ -90,6 +99,10 @@ export default function ProjectsBoard({
               Open a project to access its canvases, or create a new one.
             </p>
           </div>
+
+          {error && (
+            <p className="mb-4 text-sm text-red-400">{error}</p>
+          )}
 
           {/* Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -115,37 +128,39 @@ export default function ProjectsBoard({
                   {project.name}
                 </h2>
                 <p className="text-neutral-600 text-xs">{formatDate(project.createdAt)}</p>
+                {project.role !== "owner" && (
+                  <p className="text-neutral-700 text-xs mt-1">Member</p>
+                )}
 
-                {/* Delete */}
-                {deleteConfirm === project.id ? (
-                  <div
-                    className="absolute bottom-3 right-3 flex items-center gap-2"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <span className="text-xs text-neutral-400">Delete?</span>
-                    <button
-                      onClick={() => deleteProject(project.id)}
-                      className="text-xs text-red-400 hover:text-red-300"
+                {/* Delete — owner only */}
+                {project.role === "owner" && (
+                  deleteConfirm === project.id ? (
+                    <div
+                      className="absolute bottom-3 right-3 flex items-center gap-2"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      Yes
-                    </button>
+                      <span className="text-xs text-neutral-400">Delete?</span>
+                      <button
+                        onClick={() => deleteProject(project.id)}
+                        className="text-xs text-red-400 hover:text-red-300"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirm(null)}
+                        className="text-xs text-neutral-500 hover:text-neutral-300"
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
                     <button
-                      onClick={() => setDeleteConfirm(null)}
-                      className="text-xs text-neutral-500 hover:text-neutral-300"
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(project.id); }}
+                      className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-600 hover:text-red-400"
                     >
-                      No
+                      <Trash2 size={14} />
                     </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteConfirm(project.id);
-                    }}
-                    className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-600 hover:text-red-400"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  )
                 )}
               </div>
             ))}
@@ -160,10 +175,7 @@ export default function ProjectsBoard({
                   onChange={(e) => setNewName(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") createProject();
-                    if (e.key === "Escape") {
-                      setAdding(false);
-                      setNewName("");
-                    }
+                    if (e.key === "Escape") { setAdding(false); setNewName(""); }
                   }}
                   placeholder="Project name…"
                   className="w-full bg-transparent text-neutral-200 text-sm font-semibold outline-none placeholder:text-neutral-600 mb-4"
@@ -171,16 +183,13 @@ export default function ProjectsBoard({
                 <div className="flex gap-2">
                   <button
                     onClick={createProject}
-                    disabled={!newName.trim()}
+                    disabled={!newName.trim() || saving}
                     className="text-xs px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
                   >
-                    Create
+                    {saving ? "Creating…" : "Create"}
                   </button>
                   <button
-                    onClick={() => {
-                      setAdding(false);
-                      setNewName("");
-                    }}
+                    onClick={() => { setAdding(false); setNewName(""); }}
                     className="text-xs px-3 py-1.5 rounded-md text-neutral-500 hover:text-neutral-300 transition-colors"
                   >
                     Cancel

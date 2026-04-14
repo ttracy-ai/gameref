@@ -10,7 +10,8 @@
       "Bash(npx tsc:*)",
       "WebFetch(domain:www.sjsu.edu)",
       "WebFetch(domain:gyazo.com)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npx prisma:*)"
     ]
   }
 }

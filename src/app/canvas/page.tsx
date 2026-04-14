@@ -15,6 +15,7 @@ import ProgressBoard from "@/components/ProgressBoard";
 import ScriptEditor from "@/components/ScriptEditor";
 import CodeLayout from "@/components/CodeLayout";
 import ProjectsBoard, { type Project } from "@/components/ProjectsBoard";
+import TeamCanvas from "@/components/TeamCanvas";
 
 type ActiveProject = { id: string; name: string };
 
@@ -211,7 +212,7 @@ export default function CanvasPage() {
       ) : active === "map-layout" ? (
         <Placeholder label="Map Layout" />
       ) : active === "team" ? (
-        <Placeholder label="Team / Credits" />
+        <TeamCanvas key={projectId} projectId={projectId} />
       ) : active === "writing" ? (
         <ScriptEditor key={projectId} projectId={projectId} />
       ) : null}

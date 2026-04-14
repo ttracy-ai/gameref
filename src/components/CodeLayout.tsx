@@ -256,7 +256,7 @@ export default function CodeLayout() {
 
                   {/* Methods */}
                   {obj.methods.map((method) => (
-                    <div key={method.id}>
+                    <div key={method.id} className="group/method">
 
                       {/* Method row */}
                       <div className="flex items-center gap-3 px-5 py-0.5">
@@ -267,15 +267,25 @@ export default function CodeLayout() {
                           value={method.name}
                           onChange={(e) => updateMethodName(obj.id, method.id, e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") { e.preventDefault(); addDescription(obj.id, method.id); }
+                            if (e.key === "Enter") { e.preventDefault(); if (method.descriptions.length === 0) addDescription(obj.id, method.id); }
                             if (e.key === "Backspace" && method.name === "") { e.preventDefault(); deleteMethod(obj.id, method.id); }
                           }}
                           placeholder="methodName()"
                           className="flex-1 bg-transparent text-sky-400 text-sm outline-none placeholder:text-neutral-700 font-mono"
                         />
+                        {/* Add description — hover only, hidden if one already exists */}
+                        {method.descriptions.length === 0 && (
+                          <button
+                            onClick={() => addDescription(obj.id, method.id)}
+                            className="opacity-0 group-hover/method:opacity-100 text-xs text-neutral-600 hover:text-neutral-400 transition-all flex items-center gap-1 shrink-0"
+                          >
+                            <Plus size={10} />
+                            add description
+                          </button>
+                        )}
                       </div>
 
-                      {/* Descriptions */}
+                      {/* Description (max one) */}
                       {method.descriptions.map((desc) => (
                         <div key={desc.id} className="flex items-start gap-3 px-5 py-0.5">
                           <span className="w-6 shrink-0" />
@@ -286,7 +296,6 @@ export default function CodeLayout() {
                             value={desc.text}
                             onChange={(e) => updateDescription(obj.id, method.id, desc.id, e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") { e.preventDefault(); addDescriptionAfter(obj.id, method.id, desc.id); }
                               if (e.key === "Backspace" && desc.text === "") { e.preventDefault(); deleteDescription(obj.id, method.id, desc.id); }
                             }}
                             placeholder="Describe what this method does…"
@@ -294,20 +303,6 @@ export default function CodeLayout() {
                           />
                         </div>
                       ))}
-
-                      {/* Add description */}
-                      <div className="flex items-center gap-3 px-5 py-0.5">
-                        <span className="w-6 shrink-0" />
-                        <span className="w-5 shrink-0" />
-                        <span className="w-5 shrink-0" />
-                        <button
-                          onClick={() => addDescription(obj.id, method.id)}
-                          className="text-xs text-neutral-700 hover:text-neutral-500 transition-colors flex items-center gap-1"
-                        >
-                          <Plus size={10} />
-                          add description
-                        </button>
-                      </div>
 
                     </div>
                   ))}

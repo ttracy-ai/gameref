@@ -3,7 +3,14 @@
     "allow": [
       "Bash(dir C:\\\\Users\\\\travi\\\\OneDrive\\\\Documents\\\\Projects\\\\GameRef:*)",
       "Bash(npm install:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:www.sjsu.edu)",
+      "WebFetch(domain:gyazo.com)",
+      "Bash(node:*)"
     ]
   }
 }

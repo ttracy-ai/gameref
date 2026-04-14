@@ -1,99 +1,41 @@
-"use client";
-
-import { useState, FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
-
-function LoginForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const from = searchParams.get("from") ?? "/canvas";
-
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-
-      if (res.ok) {
-        router.push(from);
-      } else {
-        setError("Incorrect password.");
-        setPassword("");
-      }
-    } catch {
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-900">
-      <div className="w-full max-w-sm">
-        {/* Logo / Title */}
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-neutral-100">
-            GameRef
-          </h1>
-          <p className="mt-2 text-sm text-neutral-400">
-            Reference board for game development
-          </p>
-        </div>
-
-        {/* Card */}
-        <form
-          onSubmit={handleSubmit}
-          className="bg-neutral-800 border border-neutral-700 rounded-xl px-8 py-10 shadow-2xl"
-        >
-          <label
-            htmlFor="password"
-            className="block text-sm font-medium text-neutral-300 mb-2"
-          >
-            Password
-          </label>
-          <input
-            id="password"
-            type="password"
-            autoFocus
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter password"
-            className="w-full rounded-lg bg-neutral-900 border border-neutral-600 px-4 py-3 text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-          />
-
-          {error && (
-            <p className="mt-3 text-sm text-red-400">{error}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || !password}
-            className="mt-6 w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-3 text-sm font-semibold text-white transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-neutral-800"
-          >
-            {loading ? "Checking…" : "Enter"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
+import { signIn } from "@/auth";
 
 export default function LoginPage() {
   return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
+    <div className="min-h-screen flex items-center justify-center bg-neutral-900">
+      <div className="w-full max-w-sm">
+
+        {/* Title */}
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-neutral-100">GameRef</h1>
+          <p className="mt-2 text-sm text-neutral-400">Reference board for game development</p>
+        </div>
+
+        {/* Card */}
+        <div className="bg-neutral-800 border border-neutral-700 rounded-xl px-8 py-10 shadow-2xl">
+          <form
+            action={async () => {
+              "use server";
+              await signIn("google", { redirectTo: "/canvas" });
+            }}
+          >
+            <button
+              type="submit"
+              className="w-full flex items-center justify-center gap-3 rounded-lg bg-white hover:bg-neutral-100 px-4 py-3 text-sm font-semibold text-neutral-900 transition-colors"
+            >
+              {/* Google logo */}
+              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+                <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+                <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
+                <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z"/>
+              </svg>
+              Sign in with Google
+            </button>
+          </form>
+        </div>
+
+      </div>
+    </div>
   );
 }

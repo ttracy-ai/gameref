@@ -76,6 +76,7 @@ export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (
   const [editingCard, setEditingCard] = useState<{ colId: string; card: Card } | null>(null);
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newCardTitle, setNewCardTitle] = useState("");
+  const [refImages, setRefImages] = useState<RefBoardImage[]>([]);
 
   useEffect(() => {
     try {
@@ -90,6 +91,13 @@ export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (
     } catch {
       setBoard(defaultState());
     }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("gameref_refboard_v1");
+      if (raw) setRefImages(JSON.parse(raw) as RefBoardImage[]);
+    } catch {}
   }, []);
 
   function update(fn: (prev: BoardState) => BoardState) {
@@ -251,6 +259,21 @@ export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (
                                     </p>
                                   )}
                                 </div>
+                                {(card.imageRefs ?? []).length > 0 && (
+                                  <div className="flex gap-1 px-3 pb-2.5">
+                                    {(card.imageRefs ?? []).map((imgId) => {
+                                      const img = refImages.find((i) => i.id === imgId);
+                                      return img ? (
+                                        <img
+                                          key={imgId}
+                                          src={img.src}
+                                          className="h-10 w-10 object-cover rounded flex-shrink-0"
+                                          style={{ boxShadow: `0 0 0 1.5px ${strip}44` }}
+                                        />
+                                      ) : null;
+                                    })}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </Draggable>

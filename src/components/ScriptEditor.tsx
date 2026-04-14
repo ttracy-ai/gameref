@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { BookOpen, X } from "lucide-react";
 
-const STORAGE_KEY = "gameref_script_v1";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -126,7 +125,8 @@ function defaultData(): ScriptData {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function ScriptEditor() {
+export default function ScriptEditor({ projectId }: { projectId: string }) {
+  const STORAGE_KEY = `gameref_script_${projectId}_v1`;
   const [script, setScript]       = useState<ScriptData | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(true);

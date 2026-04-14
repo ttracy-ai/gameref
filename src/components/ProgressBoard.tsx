@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Plus, X, ExternalLink, Images } from "lucide-react";
 
-const STORAGE_KEY = "gameref_progress_v1";
 
 const CARD_COLORS = [
   { strip: "#737373" },  // 0: gray
@@ -72,7 +71,9 @@ function defaultState(): BoardState {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (imageId: string) => void }) {
+export default function ProgressBoard({ projectId, onImageRefClick }: { projectId: string; onImageRefClick?: (imageId: string) => void }) {
+  const STORAGE_KEY = `gameref_progress_${projectId}_v1`;
+  const REFBOARD_KEY = `gameref_refboard_${projectId}_v1`;
   const [board, setBoard] = useState<BoardState | null>(null);
   const [editingCard, setEditingCard] = useState<{ colId: string; card: Card } | null>(null);
   const [addingTo, setAddingTo] = useState<string | null>(null);
@@ -96,7 +97,7 @@ export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("gameref_refboard_v1");
+      const raw = localStorage.getItem(REFBOARD_KEY);
       if (raw) setRefImages(JSON.parse(raw) as RefBoardImage[]);
     } catch {}
   }, []);
@@ -375,6 +376,7 @@ export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (
         <CardModal
           card={editingCard.card}
           colorLabels={board.colorLabels}
+          refboardKey={REFBOARD_KEY}
           onUpdate={(updated) => {
             updateCard(editingCard.colId, updated);
             setEditingCard({ ...editingCard, card: updated });
@@ -396,6 +398,7 @@ type RefBoardImage = { id: string; src: string };
 function CardModal({
   card,
   colorLabels,
+  refboardKey,
   onUpdate,
   onUpdateLabel,
   onImageRefClick,
@@ -404,6 +407,7 @@ function CardModal({
 }: {
   card: Card;
   colorLabels: string[];
+  refboardKey: string;
   onUpdate: (card: Card) => void;
   onUpdateLabel: (idx: number, label: string) => void;
   onImageRefClick?: (imageId: string) => void;
@@ -424,10 +428,10 @@ function CardModal({
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("gameref_refboard_v1");
+      const raw = localStorage.getItem(refboardKey);
       if (raw) setAllImages(JSON.parse(raw) as RefBoardImage[]);
     } catch {}
-  }, []);
+  }, [refboardKey]);
 
   function saveAndClose() {
     onUpdate({

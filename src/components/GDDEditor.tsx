@@ -14,7 +14,6 @@ import {
   Image as ImageIcon, ExternalLink, Maximize2, Minimize2,
 } from "lucide-react";
 
-const STORAGE_KEY = "gameref_gdd_v1";
 
 // ── Custom PageLink mark ──────────────────────────────────────────────────────
 // Renders as <span data-page-id="..."> — no <a href>, so Chrome can't follow it.
@@ -43,13 +42,14 @@ const PageLink = Mark.create({
 
 // Context lets the NodeView call back to the GDDEditor without prop-drilling
 // through TipTap's extension machinery.
-const GDDImageContext = createContext<{ onImageRefClick: (id: string) => void }>({
+const GDDImageContext = createContext<{ onImageRefClick: (id: string) => void; refboardKey: string }>({
   onImageRefClick: () => {},
+  refboardKey: "",
 });
 
 // NodeView: chip when imgHeight === 0, resizable card otherwise
 function ImageRefNodeView({ node, updateAttributes, deleteNode }: NodeViewProps) {
-  const { onImageRefClick } = useContext(GDDImageContext);
+  const { onImageRefClick, refboardKey } = useContext(GDDImageContext);
   const imageId: string  = node.attrs.imageId;
   const imgHeight: number = node.attrs.imgHeight ?? 0;
   const [thumb, setThumb]           = useState<string | null>(null);
@@ -57,7 +57,7 @@ function ImageRefNodeView({ node, updateAttributes, deleteNode }: NodeViewProps)
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("gameref_refboard_v1");
+      const raw = localStorage.getItem(refboardKey);
       if (!raw) return;
       const imgs = JSON.parse(raw) as Array<{ id: string; src: string }>;
       const found = imgs.find(i => i.id === imageId);
@@ -234,20 +234,21 @@ const ImageRef = TipTapNode.create({
 });
 
 // Picker popup — reads from RefBoard's localStorage, shows thumbnails
-function ImagePicker({ pos, onSelect, onClose }: {
+function ImagePicker({ pos, onSelect, onClose, refboardKey }: {
   pos: { x: number; y: number };
   onSelect: (id: string) => void;
   onClose: () => void;
+  refboardKey: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [images, setImages] = useState<Array<{ id: string; src: string }>>([]);
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("gameref_refboard_v1");
+      const raw = localStorage.getItem(refboardKey);
       if (raw) setImages(JSON.parse(raw));
     } catch {}
-  }, []);
+  }, [refboardKey]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -308,9 +309,9 @@ function defaultData(): GDDData {
   return { pages: [{ id: "home", title: "Home", content: "" }], activeId: "home" };
 }
 
-function loadData(): GDDData {
+function loadData(storageKey: string): GDDData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return defaultData();
     const parsed = JSON.parse(raw);
     if (!parsed.pages) {
@@ -320,8 +321,8 @@ function loadData(): GDDData {
   } catch { return defaultData(); }
 }
 
-function saveData(data: GDDData) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+function saveData(data: GDDData, storageKey: string) {
+  try { localStorage.setItem(storageKey, JSON.stringify(data)); }
   catch { console.warn("GameRef: localStorage full — GDD may not persist."); }
 }
 
@@ -478,9 +479,12 @@ function PagePicker({ pos, pages, currentId, onSelect, onUnlink, canUnlink, onCl
 
 // ── Editor ────────────────────────────────────────────────────────────────────
 
-export default function GDDEditor({ onImageRefClick }: {
+export default function GDDEditor({ projectId, onImageRefClick }: {
+  projectId: string;
   onImageRefClick?: (imageId: string) => void;
 }) {
+  const storageKey = `gameref_gdd_${projectId}_v1`;
+  const refboardKey = `gameref_refboard_${projectId}_v1`;
   const [pages, setPages]         = useState<GDDPage[]>(() => defaultData().pages);
   const [activeId, setActiveId]   = useState<string>("home");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -518,7 +522,7 @@ export default function GDDEditor({ onImageRefClick }: {
       const id = activeIdRef.current;
       setPages(prev => {
         const next = prev.map(p => p.id === id ? { ...p, content: html } : p);
-        saveData({ pages: next, activeId: activeIdRef.current });
+        saveData({ pages: next, activeId: activeIdRef.current }, storageKey);
         return next;
       });
     },
@@ -542,7 +546,7 @@ export default function GDDEditor({ onImageRefClick }: {
   useEffect(() => {
     if (!editor || hasLoaded.current) return;
     hasLoaded.current = true;
-    const loaded = loadData();
+    const loaded = loadData(storageKey);
     const homePage = loaded.pages.find(p => p.id === "home");
     isSwitching.current = true;
     editor.commands.setContent(homePage?.content ?? "");
@@ -582,7 +586,7 @@ export default function GDDEditor({ onImageRefClick }: {
     editor.commands.setContent(page.content ?? "");
     requestAnimationFrame(() => { isSwitching.current = false; });
     setActiveId(id);
-    setPages(prev => { saveData({ pages: prev, activeId: id }); return prev; });
+    setPages(prev => { saveData({ pages: prev, activeId: id }, storageKey); return prev; });
     setDropdownOpen(false);
     setRenamingId(null);
     setPickerPos(null);
@@ -594,7 +598,7 @@ export default function GDDEditor({ onImageRefClick }: {
     isSwitching.current = true;
     editor?.commands.setContent("");
     requestAnimationFrame(() => { isSwitching.current = false; });
-    setPages(prev => { const next = [...prev, newPage]; saveData({ pages: next, activeId: newPage.id }); return next; });
+    setPages(prev => { const next = [...prev, newPage]; saveData({ pages: next, activeId: newPage.id }, storageKey); return next; });
     setActiveId(newPage.id);
     setRenamingId(newPage.id);
     setRenameValue(newPage.title);
@@ -603,7 +607,7 @@ export default function GDDEditor({ onImageRefClick }: {
 
   const commitRename = (id: string) => {
     const trimmed = renameValue.trim();
-    if (trimmed) setPages(prev => { const next = prev.map(p => p.id === id ? { ...p, title: trimmed } : p); saveData({ pages: next, activeId: activeIdRef.current }); return next; });
+    if (trimmed) setPages(prev => { const next = prev.map(p => p.id === id ? { ...p, title: trimmed } : p); saveData({ pages: next, activeId: activeIdRef.current }, storageKey); return next; });
     setRenamingId(null);
   };
 
@@ -620,7 +624,7 @@ export default function GDDEditor({ onImageRefClick }: {
       setActiveId("home");
     }
     setPages(nextPages);
-    saveData({ pages: nextPages, activeId: nextActiveId });
+    saveData({ pages: nextPages, activeId: nextActiveId }, storageKey);
   };
 
   // ── Link actions ────────────────────────────────────────────────────────────
@@ -685,7 +689,7 @@ export default function GDDEditor({ onImageRefClick }: {
   const linkBtnDisabled = !hasSelection && !isLinked;
 
   return (
-    <GDDImageContext.Provider value={{ onImageRefClick: onImageRefClick ?? (() => {}) }}>
+    <GDDImageContext.Provider value={{ onImageRefClick: onImageRefClick ?? (() => {}), refboardKey }}>
     <div style={{ display: "flex", flexDirection: "column", flex: 1, height: "100%", overflow: "hidden", background: "#171717" }}>
 
       {/* Toolbar */}
@@ -896,6 +900,7 @@ export default function GDDEditor({ onImageRefClick }: {
           pos={imgPickerPos}
           onSelect={insertImageRef}
           onClose={() => setImgPickerPos(null)}
+          refboardKey={refboardKey}
         />
       )}
 

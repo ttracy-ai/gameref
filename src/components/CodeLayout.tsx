@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus } from "lucide-react";
 
-const STORAGE_KEY = "gameref_codelayout_v1";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,7 +36,8 @@ function makeId() {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function CodeLayout() {
+export default function CodeLayout({ projectId }: { projectId: string }) {
+  const STORAGE_KEY = `gameref_codelayout_${projectId}_v1`;
   const [objects, setObjects] = useState<GameObject[] | null>(null);
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});

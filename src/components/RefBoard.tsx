@@ -3,7 +3,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { PanelRight, StickyNote, Plus, Eye, EyeOff, X } from "lucide-react";
 
-const STORAGE_KEY = "gameref_refboard_v1";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,9 +124,9 @@ function groupBoundsOf(imgs: PlacedImage[]) {
   return { x, y, width: right - x, height: bottom - y };
 }
 
-function loadFromStorage(): PlacedImage[] {
+function loadFromStorage(storageKey: string): PlacedImage[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return JSON.parse(raw).map((img: any) => {
@@ -151,8 +150,8 @@ function loadFromStorage(): PlacedImage[] {
   } catch { return []; }
 }
 
-function saveToStorage(images: PlacedImage[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(images)); }
+function saveToStorage(storageKey: string, images: PlacedImage[]) {
+  try { localStorage.setItem(storageKey, JSON.stringify(images)); }
   catch { console.warn("GameRef: localStorage full — some images may not persist."); }
 }
 
@@ -212,11 +211,13 @@ function GrowTextarea({
 // ── Component ────────────────────────────────────────────────────────────────
 
 type RefBoardProps = {
+  projectId: string;
   pendingFocusId?: string | null;
   onFocusConsumed?: () => void;
 };
 
-export default function RefBoard({ pendingFocusId, onFocusConsumed }: RefBoardProps) {
+export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }: RefBoardProps) {
+  const STORAGE_KEY = `gameref_refboard_${projectId}_v1`;
   const [images, setImages] = useState<PlacedImage[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [boxState, setBoxState] = useState<BoxState>(null);
@@ -283,14 +284,14 @@ export default function RefBoard({ pendingFocusId, onFocusConsumed }: RefBoardPr
 
   // ── Persistence ────────────────────────────────────────────────────────────
 
-  useEffect(() => { setImages(loadFromStorage()); setImagesLoaded(true); }, []);
+  useEffect(() => { setImages(loadFromStorage(STORAGE_KEY)); setImagesLoaded(true); }, [STORAGE_KEY]);
   useEffect(() => {
     const toSave = images.map(img => {
       const orig = focusOrigRef.current[img.id];
       return orig ? { ...img, ...orig } : img;
     });
-    saveToStorage(toSave);
-  }, [images]);
+    saveToStorage(STORAGE_KEY, toSave);
+  }, [images, STORAGE_KEY]);
 
   // ── Focus image programmatically (used by GDD image refs) ─────────────────
 

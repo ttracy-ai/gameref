@@ -38,7 +38,20 @@ export default function CodeLayout() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      setObjects(raw ? JSON.parse(raw) : []);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // Migrate: ensure every object has a methods array, every method has a descriptions array
+        const normalized = parsed.map((o: GameObject) => ({
+          ...o,
+          methods: (o.methods ?? []).map((m: Method) => ({
+            ...m,
+            descriptions: m.descriptions ?? [],
+          })),
+        }));
+        setObjects(normalized);
+      } else {
+        setObjects([]);
+      }
     } catch {
       setObjects([]);
     }

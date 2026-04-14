@@ -30,12 +30,19 @@ const DEFAULT_COLUMNS: Column[] = [
   { id: "complete", title: "Complete" },
 ];
 
+type TodoItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
 type Card = {
   id: string;
   title: string;
   shortDetails: string;
   details: string;
   colorIdx: number;
+  todos: TodoItem[];
 };
 
 type Column = {
@@ -126,7 +133,7 @@ export default function ProgressBoard() {
       setAddingTo(null);
       return;
     }
-    const card: Card = { id: makeId(), title, shortDetails: "", details: "", colorIdx: 0 };
+    const card: Card = { id: makeId(), title, shortDetails: "", details: "", colorIdx: 0, todos: [] };
     update((prev) => ({
       ...prev,
       cards: { ...prev.cards, [colId]: [...(prev.cards[colId] ?? []), card] },
@@ -347,6 +354,8 @@ function CardModal({
   const [shortDetails, setShortDetails] = useState(card.shortDetails ?? "");
   const [details, setDetails] = useState(card.details);
   const [colorIdx, setColorIdx] = useState(card.colorIdx);
+  const [todos, setTodos] = useState<TodoItem[]>(card.todos ?? []);
+  const [newTodo, setNewTodo] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   function saveAndClose() {
@@ -356,8 +365,24 @@ function CardModal({
       shortDetails,
       details,
       colorIdx,
+      todos,
     });
     onClose();
+  }
+
+  function addTodo() {
+    const text = newTodo.trim();
+    if (!text) return;
+    setTodos((prev) => [...prev, { id: makeId(), text, done: false }]);
+    setNewTodo("");
+  }
+
+  function toggleTodo(id: string) {
+    setTodos((prev) => prev.map((t) => t.id === id ? { ...t, done: !t.done } : t));
+  }
+
+  function deleteTodo(id: string) {
+    setTodos((prev) => prev.filter((t) => t.id !== id));
   }
 
   const strip = CARD_COLORS[colorIdx]?.strip ?? CARD_COLORS[0].strip;
@@ -446,6 +471,68 @@ function CardModal({
               rows={6}
               className="w-full bg-neutral-700 text-neutral-200 text-sm rounded-lg px-3 py-2.5 resize-none outline-none placeholder:text-neutral-500 focus:ring-1 focus:ring-neutral-500 leading-relaxed"
             />
+          </div>
+
+          {/* To Do list */}
+          <div>
+            <label className="text-xs text-neutral-500 uppercase tracking-wider mb-2 block">
+              To Do
+            </label>
+            <div className="flex flex-col gap-1">
+              {todos.map((todo) => (
+                <div key={todo.id} className="group flex items-center gap-2">
+                  <button
+                    onClick={() => toggleTodo(todo.id)}
+                    className="shrink-0 w-4 h-4 rounded-full border transition-all flex items-center justify-center"
+                    style={{
+                      borderColor: todo.done ? strip : "#525252",
+                      background: todo.done ? strip : "transparent",
+                    }}
+                  >
+                    {todo.done && (
+                      <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                        <path d="M1.5 4L3.5 6L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                  <span
+                    className="flex-1 text-sm leading-snug"
+                    style={{
+                      color: todo.done ? "#525252" : "#d4d4d4",
+                      textDecoration: todo.done ? "line-through" : "none",
+                    }}
+                  >
+                    {todo.text}
+                  </span>
+                  <button
+                    onClick={() => deleteTodo(todo.id)}
+                    className="opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-red-400 transition-all"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <div className="shrink-0 w-4 h-4 rounded-full border border-neutral-600" />
+              <input
+                value={newTodo}
+                onChange={(e) => setNewTodo(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); addTodo(); }
+                }}
+                placeholder="Add an item…"
+                className="flex-1 text-sm text-neutral-300 bg-transparent outline-none placeholder:text-neutral-600"
+              />
+              {newTodo.trim() && (
+                <button
+                  onClick={addTodo}
+                  className="text-xs text-neutral-500 hover:text-neutral-200 transition-colors"
+                >
+                  Add
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

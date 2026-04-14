@@ -44,6 +44,7 @@ type Card = {
   colorIdx: number;
   todos: TodoItem[];
   imageRefs: string[];
+  showTodos: boolean;
 };
 
 type Column = {
@@ -77,7 +78,6 @@ export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newCardTitle, setNewCardTitle] = useState("");
   const [refImages, setRefImages] = useState<RefBoardImage[]>([]);
-  const [expandedTodos, setExpandedTodos] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     try {
@@ -143,7 +143,7 @@ export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (
       setAddingTo(null);
       return;
     }
-    const card: Card = { id: makeId(), title, shortDetails: "", details: "", colorIdx: 0, todos: [], imageRefs: [] };
+    const card: Card = { id: makeId(), title, shortDetails: "", details: "", colorIdx: 0, todos: [], imageRefs: [], showTodos: false };
     update((prev) => ({
       ...prev,
       cards: { ...prev.cards, [colId]: [...(prev.cards[colId] ?? []), card] },
@@ -259,55 +259,35 @@ export default function ProgressBoard({ onImageRefClick }: { onImageRefClick?: (
                                       {card.shortDetails}
                                     </p>
                                   )}
-                                  {(card.todos ?? []).length > 0 && (
-                                    <>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setExpandedTodos((prev) => {
-                                            const next = new Set(prev);
-                                            next.has(card.id) ? next.delete(card.id) : next.add(card.id);
-                                            return next;
-                                          });
-                                        }}
-                                        className="mt-1.5 text-xs transition-colors"
-                                        style={{ color: strip, opacity: 0.8 }}
-                                      >
-                                        {expandedTodos.has(card.id)
-                                          ? `▾ ${(card.todos ?? []).length} tasks`
-                                          : `▸ ${(card.todos ?? []).length} tasks`}
-                                      </button>
-                                      {expandedTodos.has(card.id) && (
-                                        <div className="mt-1 flex flex-col gap-1">
-                                          {(card.todos ?? []).map((todo) => (
-                                            <div key={todo.id} className="flex items-center gap-1.5">
-                                              <div
-                                                className="shrink-0 w-3 h-3 rounded-full border flex items-center justify-center"
-                                                style={{
-                                                  borderColor: todo.done ? strip : "#737373",
-                                                  background: todo.done ? strip : "transparent",
-                                                }}
-                                              >
-                                                {todo.done && (
-                                                  <svg width="6" height="6" viewBox="0 0 8 8" fill="none">
-                                                    <path d="M1.5 4L3.5 6L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                  </svg>
-                                                )}
-                                              </div>
-                                              <span
-                                                className="text-xs leading-snug truncate"
-                                                style={{
-                                                  color: todo.done ? "#737373" : "#404040",
-                                                  textDecoration: todo.done ? "line-through" : "none",
-                                                }}
-                                              >
-                                                {todo.text}
-                                              </span>
-                                            </div>
-                                          ))}
+                                  {card.showTodos && (card.todos ?? []).length > 0 && (
+                                    <div className="mt-1.5 flex flex-col gap-1">
+                                      {(card.todos ?? []).map((todo) => (
+                                        <div key={todo.id} className="flex items-center gap-1.5">
+                                          <div
+                                            className="shrink-0 w-3 h-3 rounded-full border flex items-center justify-center"
+                                            style={{
+                                              borderColor: todo.done ? strip : "#737373",
+                                              background: todo.done ? strip : "transparent",
+                                            }}
+                                          >
+                                            {todo.done && (
+                                              <svg width="6" height="6" viewBox="0 0 8 8" fill="none">
+                                                <path d="M1.5 4L3.5 6L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                              </svg>
+                                            )}
+                                          </div>
+                                          <span
+                                            className="text-xs leading-snug truncate"
+                                            style={{
+                                              color: todo.done ? "#737373" : "#404040",
+                                              textDecoration: todo.done ? "line-through" : "none",
+                                            }}
+                                          >
+                                            {todo.text}
+                                          </span>
                                         </div>
-                                      )}
-                                    </>
+                                      ))}
+                                    </div>
                                   )}
                                 </div>
                                 {(card.imageRefs ?? []).length > 0 && (
@@ -437,6 +417,7 @@ function CardModal({
   const [todos, setTodos] = useState<TodoItem[]>(card.todos ?? []);
   const [newTodo, setNewTodo] = useState("");
   const [imageRefs, setImageRefs] = useState<string[]>(card.imageRefs ?? []);
+  const [showTodos, setShowTodos] = useState(card.showTodos ?? false);
   const [allImages, setAllImages] = useState<RefBoardImage[]>([]);
   const [showPicker, setShowPicker] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -457,6 +438,7 @@ function CardModal({
       colorIdx,
       todos,
       imageRefs,
+      showTodos,
     });
     onClose();
   }
@@ -566,9 +548,27 @@ function CardModal({
 
           {/* To Do list */}
           <div>
-            <label className="text-xs text-neutral-500 uppercase tracking-wider mb-2 block">
-              To Do
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-neutral-500 uppercase tracking-wider">
+                To Do
+              </label>
+              <button
+                onClick={() => setShowTodos((v) => !v)}
+                className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
+                title={showTodos ? "Hide on card" : "Show on card"}
+              >
+                <span className="text-neutral-600">show on card</span>
+                <div
+                  className="relative w-7 h-4 rounded-full transition-colors"
+                  style={{ background: showTodos ? strip : "#404040" }}
+                >
+                  <div
+                    className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-all"
+                    style={{ left: showTodos ? "calc(100% - 14px)" : "2px" }}
+                  />
+                </div>
+              </button>
+            </div>
             <div className="flex flex-col gap-1">
               {todos.map((todo) => (
                 <div key={todo.id} className="group flex items-center gap-2">

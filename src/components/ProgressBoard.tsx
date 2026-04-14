@@ -29,6 +29,7 @@ const DEFAULT_COLUMNS: Column[] = [
 type Card = {
   id: string;
   title: string;
+  shortDetails: string;
   details: string;
   colorIdx: number;
 };
@@ -121,7 +122,7 @@ export default function ProgressBoard() {
       setAddingTo(null);
       return;
     }
-    const card: Card = { id: makeId(), title, details: "", colorIdx: 0 };
+    const card: Card = { id: makeId(), title, shortDetails: "", details: "", colorIdx: 0 };
     update((prev) => ({
       ...prev,
       cards: { ...prev.cards, [colId]: [...(prev.cards[colId] ?? []), card] },
@@ -232,9 +233,9 @@ export default function ProgressBoard() {
                                   <p className="text-sm text-neutral-900 leading-snug font-medium">
                                     {card.title}
                                   </p>
-                                  {card.details && (
-                                    <p className="text-xs text-neutral-600 mt-1 line-clamp-2 leading-relaxed">
-                                      {card.details}
+                                  {card.shortDetails && (
+                                    <p className="text-xs text-neutral-700 mt-0.5 line-clamp-2 leading-relaxed">
+                                      {card.shortDetails}
                                     </p>
                                   )}
                                 </div>
@@ -339,6 +340,7 @@ function CardModal({
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(card.title);
+  const [shortDetails, setShortDetails] = useState(card.shortDetails ?? "");
   const [details, setDetails] = useState(card.details);
   const [colorIdx, setColorIdx] = useState(card.colorIdx);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -347,6 +349,7 @@ function CardModal({
     onUpdate({
       ...card,
       title: title.trim() || card.title,
+      shortDetails,
       details,
       colorIdx,
     });
@@ -413,6 +416,19 @@ function CardModal({
             placeholder="Card title"
             autoFocus
           />
+
+          {/* Short Details */}
+          <div>
+            <label className="text-xs text-neutral-500 uppercase tracking-wider mb-1.5 block">
+              Short Details
+            </label>
+            <input
+              value={shortDetails}
+              onChange={(e) => setShortDetails(e.target.value)}
+              placeholder="Subtitle or brief summary visible on the card…"
+              className="w-full bg-neutral-700 text-neutral-200 text-sm rounded-lg px-3 py-2 outline-none placeholder:text-neutral-500 focus:ring-1 focus:ring-neutral-500"
+            />
+          </div>
 
           {/* Details */}
           <div>

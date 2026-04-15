@@ -67,7 +67,7 @@ export async function POST(
   const membership = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId, userId: session.user.id } },
   });
-  if (!membership || membership.role !== "owner") {
+  if (!membership || !["team_leader", "moderator"].includes(membership.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -17,7 +17,7 @@ export async function GET(
 
   const { id: projectId } = await params;
   const membership = await getOwnerMembership(projectId, session.user.id);
-  if (!membership || membership.role !== "owner") {
+  if (!membership || !["team_leader", "moderator"].includes(membership.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -34,7 +34,7 @@ export async function POST(
 
   const { id: projectId } = await params;
   const membership = await getOwnerMembership(projectId, session.user.id);
-  if (!membership || membership.role !== "owner") {
+  if (!membership || !["team_leader", "moderator"].includes(membership.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -55,7 +55,7 @@ export async function DELETE(
 
   const { id: projectId } = await params;
   const membership = await getOwnerMembership(projectId, session.user.id);
-  if (!membership || membership.role !== "owner") {
+  if (!membership || !["team_leader", "moderator"].includes(membership.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

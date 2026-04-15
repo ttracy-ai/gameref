@@ -12,7 +12,13 @@ export async function DELETE(
   const { id } = await params;
   const project = await prisma.project.findUnique({ where: { id } });
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (project.ownerId !== session.user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const membership = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId: id, userId: session.user.id } },
+  });
+  if (!membership || membership.role !== "team_leader") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   await prisma.project.delete({ where: { id } });
   return NextResponse.json({ success: true });

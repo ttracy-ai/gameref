@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, X, UserPlus, Crown, User, Link, RefreshCw, Copy, Check } from "lucide-react";
+import { Loader2, X, UserPlus, Crown, User, Shield, Link, RefreshCw, Copy, Check } from "lucide-react";
+
+type Role = "team_leader" | "moderator" | "member";
 
 type Member = {
   id: string;
@@ -9,7 +11,7 @@ type Member = {
   username: string | null;
   email: string | null;
   image: string | null;
-  role: string;
+  role: Role;
   joinedAt: string;
 };
 
@@ -22,7 +24,7 @@ type Invitation = {
 type TeamData = {
   members: Member[];
   invitations: Invitation[];
-  currentUserRole: string;
+  currentUserRole: Role;
 };
 
 function displayName(member: Pick<Member, "username" | "name" | "email">) {
@@ -46,6 +48,37 @@ function Avatar({ name, username, image }: { name: string | null; username: stri
   );
 }
 
+const ROLE_LABELS: Record<Role, string> = {
+  team_leader: "Team Leader",
+  moderator: "Moderator",
+  member: "Member",
+};
+
+function RoleBadge({ role }: { role: Role }) {
+  if (role === "team_leader") {
+    return (
+      <span className="flex items-center gap-1 text-xs text-amber-500">
+        <Crown size={12} />
+        Team Leader
+      </span>
+    );
+  }
+  if (role === "moderator") {
+    return (
+      <span className="flex items-center gap-1 text-xs text-indigo-400">
+        <Shield size={12} />
+        Moderator
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 text-xs text-neutral-500">
+      <User size={12} />
+      Member
+    </span>
+  );
+}
+
 export default function TeamCanvas({ projectId }: { projectId: string }) {
   const [data, setData] = useState<TeamData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,10 +88,13 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
 
   // Invite link state
-  const [inviteToken, setInviteToken] = useState<string | null | undefined>(undefined); // undefined = not loaded
+  const [inviteToken, setInviteToken] = useState<string | null | undefined>(undefined);
   const [linkGenerating, setLinkGenerating] = useState(false);
   const [linkRevoking, setLinkRevoking] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Role change state: memberId → "saving" | null
+  const [changingRole, setChangingRole] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setLoading(true);
@@ -171,6 +207,28 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
     }
   }
 
+  async function changeRole(userId: string, role: Role) {
+    setChangingRole((prev) => ({ ...prev, [userId]: true }));
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (res.ok) {
+        setData((prev) =>
+          prev
+            ? { ...prev, members: prev.members.map((m) => m.id === userId ? { ...m, role } : m) }
+            : prev
+        );
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setChangingRole((prev) => ({ ...prev, [userId]: false }));
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex-1 flex items-center justify-center bg-neutral-900">
@@ -187,7 +245,8 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
     );
   }
 
-  const isOwner = data.currentUserRole === "owner";
+  const isTeamLeader = data.currentUserRole === "team_leader";
+  const canInvite = isTeamLeader || data.currentUserRole === "moderator";
 
   return (
     <main className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-900">
@@ -210,38 +269,49 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
               </span>
             </div>
             <div className="divide-y divide-neutral-700/50">
-              {data.members.map((member) => (
-                <div key={member.id} className="flex items-center gap-3 px-5 py-3">
-                  <Avatar name={member.name} username={member.username} image={member.image} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-neutral-200 text-sm font-medium truncate">
-                      {displayName(member)}
-                    </p>
+              {data.members.map((member) => {
+                const isSelf = member.id === undefined; // can't compare without session id in client
+                const saving = changingRole[member.id];
+                return (
+                  <div key={member.id} className="flex items-center gap-3 px-5 py-3">
+                    <Avatar name={member.name} username={member.username} image={member.image} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-neutral-200 text-sm font-medium truncate">
+                        {displayName(member)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Role selector for team leader, static badge otherwise */}
+                      {isTeamLeader && member.role !== "team_leader" ? (
+                        <div className="relative flex items-center">
+                          {saving && <Loader2 size={12} className="text-neutral-500 animate-spin mr-1.5" />}
+                          <select
+                            value={member.role}
+                            disabled={saving}
+                            onChange={(e) => changeRole(member.id, e.target.value as Role)}
+                            className="text-xs bg-neutral-700 border border-neutral-600 text-neutral-300 rounded-md pl-2 pr-6 py-1 outline-none focus:border-neutral-400 cursor-pointer appearance-none disabled:opacity-50"
+                          >
+                            <option value="team_leader">Team Leader</option>
+                            <option value="moderator">Moderator</option>
+                            <option value="member">Member</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <RoleBadge role={member.role} />
+                      )}
+                      {isTeamLeader && member.role !== "team_leader" && (
+                        <button
+                          onClick={() => removeMember(member.id)}
+                          className="text-neutral-600 hover:text-red-400 transition-colors ml-1"
+                          title="Remove member"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {member.role === "owner" ? (
-                      <span className="flex items-center gap-1 text-xs text-amber-500">
-                        <Crown size={12} />
-                        Owner
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs text-neutral-500">
-                        <User size={12} />
-                        Member
-                      </span>
-                    )}
-                    {isOwner && member.role !== "owner" && (
-                      <button
-                        onClick={() => removeMember(member.id)}
-                        className="text-neutral-600 hover:text-red-400 transition-colors ml-2"
-                        title="Remove member"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -263,7 +333,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                       <p className="text-neutral-400 text-sm truncate">{inv.email}</p>
                       <p className="text-neutral-600 text-xs">Awaiting sign-in</p>
                     </div>
-                    {isOwner && (
+                    {canInvite && (
                       <button
                         onClick={() => cancelInvitation(inv.id)}
                         className="text-neutral-600 hover:text-red-400 transition-colors"
@@ -278,8 +348,8 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             </div>
           )}
 
-          {/* Invite form — owner only */}
-          {isOwner && (
+          {/* Invite form — team leader & moderator */}
+          {canInvite && (
             <>
               <div className="bg-neutral-800 rounded-xl border border-neutral-700 p-5 mb-4">
                 <h2 className="text-neutral-300 text-sm font-semibold mb-1 flex items-center gap-2">

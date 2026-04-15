@@ -1,7 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Loader2, X, UserPlus, Crown, User, Shield, Link, RefreshCw, Copy, Check } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import {
+  Loader2, X, UserPlus, Crown, User, Shield, Link,
+  RefreshCw, Copy, Check, Briefcase, Plus, ChevronDown,
+} from "lucide-react";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type Role = "team_leader" | "moderator" | "member";
 
@@ -27,61 +32,114 @@ type TeamData = {
   currentUserRole: Role;
 };
 
+type RoleUser = {
+  id: string;
+  name: string | null;
+  username: string | null;
+  image: string | null;
+};
+
+type ProjectRole = {
+  id: string;
+  name: string;
+  description: string | null;
+  user: RoleUser | null;
+};
+
+// ── Preset roles ───────────────────────────────────────────────────────────────
+
+const PRESET_ROLES = [
+  "Programmer",
+  "Lead Programmer",
+  "Gameplay Programmer",
+  "2D Artist",
+  "3D Artist",
+  "Character Artist",
+  "Concept Artist",
+  "Animator",
+  "VFX Artist",
+  "UI / UX Designer",
+  "Composer / Musician",
+  "Sound Designer",
+  "Game Designer",
+  "Lead Designer",
+  "Level Designer",
+  "Narrative Designer",
+  "Writer",
+  "Project Manager",
+  "QA Tester",
+  "Voice Actor",
+  "Custom…",
+] as const;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function displayName(member: Pick<Member, "username" | "name" | "email">) {
   return member.username ?? member.name ?? member.email ?? "Unknown";
 }
 
-function Avatar({ name, username, image }: { name: string | null; username: string | null; image: string | null }) {
+function roleDisplayName(u: Pick<RoleUser, "username" | "name">) {
+  return u.username ?? u.name ?? "Unknown";
+}
+
+function Avatar({
+  name,
+  username,
+  image,
+  size = 8,
+}: {
+  name: string | null;
+  username: string | null;
+  image: string | null;
+  size?: number;
+}) {
+  const cls = `w-${size} h-${size} rounded-full shrink-0`;
   if (image) {
     return (
       <img
         src={image}
         alt={username ?? name ?? ""}
-        className="w-8 h-8 rounded-full object-cover shrink-0"
+        className={`${cls} object-cover`}
       />
     );
   }
   return (
-    <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center shrink-0">
-      <User size={16} className="text-neutral-500" />
+    <div className={`${cls} bg-neutral-700 flex items-center justify-center`}>
+      <User size={size * 2} className="text-neutral-500" />
     </div>
   );
 }
-
-const ROLE_LABELS: Record<Role, string> = {
-  team_leader: "Team Leader",
-  moderator: "Moderator",
-  member: "Member",
-};
 
 function RoleBadge({ role }: { role: Role }) {
   if (role === "team_leader") {
     return (
       <span className="flex items-center gap-1 text-xs text-amber-500">
-        <Crown size={12} />
-        Team Leader
+        <Crown size={12} /> Team Leader
       </span>
     );
   }
   if (role === "moderator") {
     return (
       <span className="flex items-center gap-1 text-xs text-indigo-400">
-        <Shield size={12} />
-        Moderator
+        <Shield size={12} /> Moderator
       </span>
     );
   }
   return (
     <span className="flex items-center gap-1 text-xs text-neutral-500">
-      <User size={12} />
-      Member
+      <User size={12} /> Member
     </span>
   );
 }
 
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function TeamCanvas({ projectId }: { projectId: string }) {
   const [data, setData] = useState<TeamData | null>(null);
+  const [roles, setRoles] = useState<ProjectRole[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Invite state
   const [inviteInput, setInviteInput] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -93,8 +151,18 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
   const [linkRevoking, setLinkRevoking] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Role change state: memberId → "saving" | null
+  // Member role change
   const [changingRole, setChangingRole] = useState<Record<string, boolean>>({});
+
+  // Role management
+  const [addingRole, setAddingRole] = useState(false);
+  const [newRolePreset, setNewRolePreset] = useState<string>(PRESET_ROLES[0]);
+  const [newRoleCustom, setNewRoleCustom] = useState("");
+  const [newRoleUserId, setNewRoleUserId] = useState("");
+  const [savingRole, setSavingRole] = useState(false);
+  const [assigningRoleId, setAssigningRoleId] = useState<string | null>(null);
+  const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
+  const customInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -103,15 +171,23 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
         if (!r.ok) throw new Error(String(r.status));
         return r.json();
       }),
-      fetch(`/api/projects/${projectId}/invite-link`).then((r) => r.ok ? r.json() : { token: null }),
+      fetch(`/api/projects/${projectId}/invite-link`).then((r) =>
+        r.ok ? r.json() : { token: null }
+      ),
+      fetch(`/api/projects/${projectId}/roles`).then((r) =>
+        r.ok ? r.json() : { roles: [] }
+      ),
     ])
-      .then(([teamData, linkData]) => {
+      .then(([teamData, linkData, rolesData]) => {
         setData(teamData);
         setInviteToken(linkData.token ?? null);
+        setRoles(rolesData.roles ?? []);
       })
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [projectId]);
+
+  // ── Invite link ─────────────────────────────────────────────────────────────
 
   async function generateLink() {
     setLinkGenerating(true);
@@ -142,6 +218,8 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
       setTimeout(() => setCopied(false), 2000);
     });
   }
+
+  // ── Invite member ──────────────────────────────────────────────────────────
 
   async function invite() {
     const email = inviteInput.trim();
@@ -200,7 +278,9 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
     try {
       await fetch(`/api/projects/${projectId}/invitations/${invitationId}`, { method: "DELETE" });
       setData((prev) =>
-        prev ? { ...prev, invitations: prev.invitations.filter((i) => i.id !== invitationId) } : prev
+        prev
+          ? { ...prev, invitations: prev.invitations.filter((i) => i.id !== invitationId) }
+          : prev
       );
     } catch {
       // silently fail
@@ -218,16 +298,77 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
       if (res.ok) {
         setData((prev) =>
           prev
-            ? { ...prev, members: prev.members.map((m) => m.id === userId ? { ...m, role } : m) }
+            ? { ...prev, members: prev.members.map((m) => (m.id === userId ? { ...m, role } : m)) }
             : prev
         );
       }
-    } catch {
-      // silently fail
     } finally {
       setChangingRole((prev) => ({ ...prev, [userId]: false }));
     }
   }
+
+  // ── Role management ────────────────────────────────────────────────────────
+
+  const isCustomPreset = newRolePreset === "Custom…";
+  const newRoleName = isCustomPreset ? newRoleCustom.trim() : newRolePreset;
+
+  useEffect(() => {
+    if (isCustomPreset) customInputRef.current?.focus();
+  }, [isCustomPreset]);
+
+  async function addRole() {
+    if (!newRoleName) return;
+    setSavingRole(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/roles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newRoleName,
+          userId: newRoleUserId || null,
+        }),
+      });
+      if (res.ok) {
+        const created: ProjectRole = await res.json();
+        setRoles((prev) => [...prev, created]);
+        setAddingRole(false);
+        setNewRolePreset(PRESET_ROLES[0]);
+        setNewRoleCustom("");
+        setNewRoleUserId("");
+      }
+    } finally {
+      setSavingRole(false);
+    }
+  }
+
+  async function assignRole(roleId: string, userId: string | null) {
+    setAssigningRoleId(roleId);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/roles/${roleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (res.ok) {
+        const updated: ProjectRole = await res.json();
+        setRoles((prev) => prev.map((r) => (r.id === roleId ? updated : r)));
+      }
+    } finally {
+      setAssigningRoleId(null);
+    }
+  }
+
+  async function deleteRole(roleId: string) {
+    setDeletingRoleId(roleId);
+    try {
+      await fetch(`/api/projects/${projectId}/roles/${roleId}`, { method: "DELETE" });
+      setRoles((prev) => prev.filter((r) => r.id !== roleId));
+    } finally {
+      setDeletingRoleId(null);
+    }
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -248,6 +389,9 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
   const isTeamLeader = data.currentUserRole === "team_leader";
   const canInvite = isTeamLeader || data.currentUserRole === "moderator";
 
+  const filledRoles = roles.filter((r) => r.user !== null);
+  const openRoles = roles.filter((r) => r.user === null);
+
   return (
     <main className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-900">
       <div className="flex-1 overflow-y-auto">
@@ -261,7 +405,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             </p>
           </div>
 
-          {/* Members list */}
+          {/* ── Members ── */}
           <div className="bg-neutral-800 rounded-xl border border-neutral-700 overflow-hidden mb-4">
             <div className="px-5 py-2.5 border-b border-neutral-700">
               <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
@@ -270,7 +414,6 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             </div>
             <div className="divide-y divide-neutral-700/50">
               {data.members.map((member) => {
-                const isSelf = member.id === undefined; // can't compare without session id in client
                 const saving = changingRole[member.id];
                 return (
                   <div key={member.id} className="flex items-center gap-3 px-5 py-3">
@@ -281,10 +424,11 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {/* Role selector for team leader, static badge otherwise */}
                       {isTeamLeader && member.role !== "team_leader" ? (
                         <div className="relative flex items-center">
-                          {saving && <Loader2 size={12} className="text-neutral-500 animate-spin mr-1.5" />}
+                          {saving && (
+                            <Loader2 size={12} className="text-neutral-500 animate-spin mr-1.5" />
+                          )}
                           <select
                             value={member.role}
                             disabled={saving}
@@ -315,7 +459,248 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             </div>
           </div>
 
-          {/* Pending invitations */}
+          {/* ── Roles ── */}
+          <div className="bg-neutral-800 rounded-xl border border-neutral-700 overflow-hidden mb-4">
+            <div className="px-5 py-2.5 border-b border-neutral-700 flex items-center justify-between">
+              <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+                Roles
+                {roles.length > 0 && (
+                  <span className="ml-1.5 text-neutral-600">
+                    ({filledRoles.length} filled
+                    {openRoles.length > 0 && `, ${openRoles.length} open`})
+                  </span>
+                )}
+              </span>
+              {canInvite && !addingRole && (
+                <button
+                  onClick={() => setAddingRole(true)}
+                  className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
+                >
+                  <Plus size={12} /> Add role
+                </button>
+              )}
+            </div>
+
+            {roles.length === 0 && !addingRole ? (
+              <div className="px-5 py-6 text-center">
+                <Briefcase size={20} className="text-neutral-700 mx-auto mb-2" />
+                <p className="text-neutral-600 text-sm">No roles defined yet.</p>
+                {canInvite && (
+                  <p className="text-neutral-700 text-xs mt-1">
+                    Add roles to give team members credit and advertise open positions.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="divide-y divide-neutral-700/50">
+
+                {/* Filled roles */}
+                {filledRoles.map((role) => (
+                  <div key={role.id} className="flex items-center gap-3 px-5 py-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-neutral-300 text-sm font-medium truncate">{role.name}</p>
+                    </div>
+                    {role.user && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Avatar
+                          name={role.user.name}
+                          username={role.user.username}
+                          image={role.user.image}
+                          size={6}
+                        />
+                        <span className="text-neutral-400 text-xs truncate max-w-[120px]">
+                          {roleDisplayName(role.user)}
+                        </span>
+                      </div>
+                    )}
+                    {canInvite && (
+                      <div className="flex items-center gap-1 shrink-0 ml-1">
+                        {/* Reassign dropdown */}
+                        <div className="relative">
+                          <select
+                            value={role.user?.id ?? ""}
+                            disabled={assigningRoleId === role.id}
+                            onChange={(e) => assignRole(role.id, e.target.value || null)}
+                            className="text-xs bg-neutral-700 border border-neutral-600 text-neutral-400 rounded-md pl-2 pr-5 py-0.5 outline-none focus:border-neutral-400 cursor-pointer appearance-none disabled:opacity-50"
+                            title="Reassign or unassign"
+                          >
+                            <option value="">— Open —</option>
+                            {data.members.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {displayName(m)}
+                              </option>
+                            ))}
+                          </select>
+                          {assigningRoleId === role.id ? (
+                            <Loader2
+                              size={10}
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 animate-spin"
+                            />
+                          ) : (
+                            <ChevronDown
+                              size={10}
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none"
+                            />
+                          )}
+                        </div>
+                        <button
+                          onClick={() => deleteRole(role.id)}
+                          disabled={deletingRoleId === role.id}
+                          className="text-neutral-600 hover:text-red-400 transition-colors disabled:opacity-40 ml-0.5"
+                          title="Remove role"
+                        >
+                          {deletingRoleId === role.id ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <X size={13} />
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Open roles */}
+                {openRoles.map((role) => (
+                  <div key={role.id} className="flex items-center gap-3 px-5 py-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-neutral-400 text-sm font-medium truncate">{role.name}</p>
+                    </div>
+                    <span className="text-xs text-emerald-600 border border-emerald-900 bg-emerald-950/40 px-2 py-0.5 rounded-full shrink-0">
+                      Open
+                    </span>
+                    {canInvite && (
+                      <div className="flex items-center gap-1 shrink-0 ml-1">
+                        <div className="relative">
+                          <select
+                            value=""
+                            disabled={assigningRoleId === role.id}
+                            onChange={(e) => assignRole(role.id, e.target.value || null)}
+                            className="text-xs bg-neutral-700 border border-neutral-600 text-neutral-400 rounded-md pl-2 pr-5 py-0.5 outline-none focus:border-neutral-400 cursor-pointer appearance-none disabled:opacity-50"
+                            title="Assign to member"
+                          >
+                            <option value="">Assign…</option>
+                            {data.members.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {displayName(m)}
+                              </option>
+                            ))}
+                          </select>
+                          {assigningRoleId === role.id ? (
+                            <Loader2
+                              size={10}
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 animate-spin"
+                            />
+                          ) : (
+                            <ChevronDown
+                              size={10}
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none"
+                            />
+                          )}
+                        </div>
+                        <button
+                          onClick={() => deleteRole(role.id)}
+                          disabled={deletingRoleId === role.id}
+                          className="text-neutral-600 hover:text-red-400 transition-colors disabled:opacity-40 ml-0.5"
+                          title="Remove role"
+                        >
+                          {deletingRoleId === role.id ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <X size={13} />
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Add role form */}
+                {addingRole && (
+                  <div className="px-5 py-4 bg-neutral-750 border-t border-neutral-700/50">
+                    <p className="text-xs text-neutral-500 mb-3 font-medium">New role</p>
+                    <div className="flex flex-col gap-2">
+                      {/* Role name */}
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <select
+                            value={newRolePreset}
+                            onChange={(e) => setNewRolePreset(e.target.value)}
+                            className="w-full text-sm bg-neutral-900 border border-neutral-600 text-neutral-300 rounded-lg px-3 pr-8 py-2 outline-none focus:border-neutral-400 cursor-pointer appearance-none"
+                          >
+                            {PRESET_ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {r}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={14}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Custom name input */}
+                      {isCustomPreset && (
+                        <input
+                          ref={customInputRef}
+                          value={newRoleCustom}
+                          onChange={(e) => setNewRoleCustom(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") addRole(); }}
+                          placeholder="Role name…"
+                          className="text-sm bg-neutral-900 border border-neutral-600 text-neutral-200 rounded-lg px-3 py-2 outline-none focus:border-neutral-400 placeholder:text-neutral-600"
+                        />
+                      )}
+
+                      {/* Assign to member (optional) */}
+                      <div className="relative">
+                        <select
+                          value={newRoleUserId}
+                          onChange={(e) => setNewRoleUserId(e.target.value)}
+                          className="w-full text-sm bg-neutral-900 border border-neutral-600 text-neutral-400 rounded-lg px-3 pr-8 py-2 outline-none focus:border-neutral-400 cursor-pointer appearance-none"
+                        >
+                          <option value="">Leave open (unfilled)</option>
+                          {data.members.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {displayName(m)}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none"
+                        />
+                      </div>
+
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={addRole}
+                          disabled={!newRoleName || savingRole}
+                          className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+                        >
+                          {savingRole ? <Loader2 size={14} className="animate-spin" /> : "Add"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setAddingRole(false);
+                            setNewRolePreset(PRESET_ROLES[0]);
+                            setNewRoleCustom("");
+                            setNewRoleUserId("");
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-neutral-500 hover:text-neutral-300 text-sm transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Pending invitations ── */}
           {data.invitations.length > 0 && (
             <div className="bg-neutral-800 rounded-xl border border-neutral-700 overflow-hidden mb-4">
               <div className="px-5 py-2.5 border-b border-neutral-700">
@@ -348,7 +733,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             </div>
           )}
 
-          {/* Invite form — team leader & moderator */}
+          {/* ── Invite form — team leader & moderator ── */}
           {canInvite && (
             <>
               <div className="bg-neutral-800 rounded-xl border border-neutral-700 p-5 mb-4">
@@ -357,14 +742,21 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                   Invite by email or username
                 </h2>
                 <p className="text-neutral-600 text-xs mb-3">
-                  Enter an email address or a <span className="text-neutral-500">@username</span> (for users already signed in)
+                  Enter an email address or a{" "}
+                  <span className="text-neutral-500">@username</span> (for users already signed in)
                 </p>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={inviteInput}
-                    onChange={(e) => { setInviteInput(e.target.value); setInviteError(null); setInviteSuccess(null); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") invite(); }}
+                    onChange={(e) => {
+                      setInviteInput(e.target.value);
+                      setInviteError(null);
+                      setInviteSuccess(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") invite();
+                    }}
                     placeholder="teammate@example.com or @username"
                     className="flex-1 bg-neutral-900 border border-neutral-600 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder:text-neutral-600 outline-none focus:border-neutral-400 transition-colors"
                   />
@@ -387,7 +779,8 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                   Invite link
                 </h2>
                 <p className="text-neutral-600 text-xs mb-3">
-                  Share this link anywhere — Discord, email, wherever. Anyone who clicks it and signs in will join the project.
+                  Share this link anywhere — Discord, email, wherever. Anyone who clicks it and
+                  signs in will join the project.
                 </p>
 
                 {inviteToken === undefined ? (
@@ -398,14 +791,20 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                   <div className="flex flex-col gap-2">
                     <div className="flex gap-2">
                       <div className="flex-1 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-neutral-400 font-mono truncate">
-                        {typeof window !== "undefined" ? `${window.location.origin}/invite/${inviteToken}` : `/invite/${inviteToken}`}
+                        {typeof window !== "undefined"
+                          ? `${window.location.origin}/invite/${inviteToken}`
+                          : `/invite/${inviteToken}`}
                       </div>
                       <button
                         onClick={copyLink}
                         className="px-3 py-2 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-300 transition-colors shrink-0"
                         title="Copy link"
                       >
-                        {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                        {copied ? (
+                          <Check size={14} className="text-emerald-400" />
+                        ) : (
+                          <Copy size={14} />
+                        )}
                       </button>
                       <button
                         onClick={revokeLink}
@@ -416,7 +815,9 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                         {linkRevoking ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
                       </button>
                     </div>
-                    <p className="text-neutral-700 text-xs">Revoking the link stops any future joins — existing members are unaffected.</p>
+                    <p className="text-neutral-700 text-xs">
+                      Revoking the link stops any future joins — existing members are unaffected.
+                    </p>
                   </div>
                 ) : (
                   <button
@@ -424,7 +825,11 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                     disabled={linkGenerating}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 text-neutral-300 text-sm font-medium transition-colors"
                   >
-                    {linkGenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    {linkGenerating ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={14} />
+                    )}
                     Generate invite link
                   </button>
                 )}

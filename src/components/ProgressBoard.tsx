@@ -232,7 +232,7 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
                                 onClick={() =>
                                   setEditingCard({ colId: col.id, card })
                                 }
-                                className={`rounded-lg cursor-pointer select-none transition-all overflow-hidden ${
+                                className={`shrink-0 rounded-lg cursor-pointer select-none transition-all overflow-hidden ${
                                   dragSnapshot.isDragging
                                     ? "shadow-2xl shadow-black/60 opacity-95 rotate-1"
                                     : "hover:brightness-110"

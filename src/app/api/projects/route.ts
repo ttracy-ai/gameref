@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       name: name.trim(),
       ownerId: session.user.id,
       members: {
-        create: { userId: session.user.id, role: "owner" },
+        create: { userId: session.user.id, role: "team_leader" },
       },
     },
   });
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     id: project.id,
     name: project.name,
     createdAt: project.createdAt.toISOString(),
-    role: "owner",
+    role: "team_leader",
     ownerId: project.ownerId,
   });
 }

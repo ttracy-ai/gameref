@@ -128,12 +128,12 @@ export default function ProjectsBoard({
                   {project.name}
                 </h2>
                 <p className="text-neutral-600 text-xs">{formatDate(project.createdAt)}</p>
-                {project.role !== "owner" && (
+                {project.role !== "team_leader" && (
                   <p className="text-neutral-700 text-xs mt-1">Member</p>
                 )}
 
-                {/* Delete — owner only */}
-                {project.role === "owner" && (
+                {/* Delete — team leader only */}
+                {project.role === "team_leader" && (
                   deleteConfirm === project.id ? (
                     <div
                       className="absolute bottom-3 right-3 flex items-center gap-2"

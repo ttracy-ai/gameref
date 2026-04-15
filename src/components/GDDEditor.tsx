@@ -7,6 +7,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { Mark, Node as TipTapNode, mergeAttributes } from "@tiptap/core";
 import type { NodeViewProps } from "@tiptap/core";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Heading1, Heading2, Heading3, List, ListOrdered, Minus,
@@ -321,9 +322,10 @@ function loadData(storageKey: string): GDDData {
   } catch { return defaultData(); }
 }
 
-function saveData(data: GDDData, storageKey: string) {
+function saveData(data: GDDData, storageKey: string, projectId: string) {
   try { localStorage.setItem(storageKey, JSON.stringify(data)); }
   catch { console.warn("GameRef: localStorage full — GDD may not persist."); }
+  syncCanvasData(projectId, "gdd", data);
 }
 
 // ── Breadcrumb helpers ────────────────────────────────────────────────────────
@@ -522,7 +524,7 @@ export default function GDDEditor({ projectId, onImageRefClick }: {
       const id = activeIdRef.current;
       setPages(prev => {
         const next = prev.map(p => p.id === id ? { ...p, content: html } : p);
-        saveData({ pages: next, activeId: activeIdRef.current }, storageKey);
+        saveData({ pages: next, activeId: activeIdRef.current }, storageKey, projectId);
         return next;
       });
     },
@@ -542,17 +544,34 @@ export default function GDDEditor({ projectId, onImageRefClick }: {
     },
   });
 
-  // Load from storage once editor is ready
+  // Load from DB (or localStorage fallback) once editor is ready
   useEffect(() => {
     if (!editor || hasLoaded.current) return;
     hasLoaded.current = true;
-    const loaded = loadData(storageKey);
-    const homePage = loaded.pages.find(p => p.id === "home");
-    isSwitching.current = true;
-    editor.commands.setContent(homePage?.content ?? "");
-    requestAnimationFrame(() => { isSwitching.current = false; });
-    setPages(loaded.pages);
-    setActiveId("home");
+
+    (async () => {
+      let loaded: GDDData;
+
+      // 1. Try DB
+      const dbData = await loadCanvasData(projectId, "gdd");
+      if (dbData) {
+        loaded = dbData as GDDData;
+        try { localStorage.setItem(storageKey, JSON.stringify(loaded)); } catch {}
+      } else {
+        // 2. Fall back to localStorage and migrate non-empty data to DB
+        loaded = loadData(storageKey);
+        if (loaded.pages.some(p => p.content)) {
+          syncCanvasData(projectId, "gdd", loaded);
+        }
+      }
+
+      const startPage = loaded.pages.find(p => p.id === "home") ?? loaded.pages[0];
+      isSwitching.current = true;
+      editor.commands.setContent(startPage?.content ?? "");
+      requestAnimationFrame(() => { isSwitching.current = false; });
+      setPages(loaded.pages);
+      setActiveId(startPage?.id ?? "home");
+    })();
   }, [editor]);
 
   // Intercept clicks on internal page links
@@ -586,7 +605,7 @@ export default function GDDEditor({ projectId, onImageRefClick }: {
     editor.commands.setContent(page.content ?? "");
     requestAnimationFrame(() => { isSwitching.current = false; });
     setActiveId(id);
-    setPages(prev => { saveData({ pages: prev, activeId: id }, storageKey); return prev; });
+    setPages(prev => { saveData({ pages: prev, activeId: id }, storageKey, projectId); return prev; });
     setDropdownOpen(false);
     setRenamingId(null);
     setPickerPos(null);
@@ -598,7 +617,7 @@ export default function GDDEditor({ projectId, onImageRefClick }: {
     isSwitching.current = true;
     editor?.commands.setContent("");
     requestAnimationFrame(() => { isSwitching.current = false; });
-    setPages(prev => { const next = [...prev, newPage]; saveData({ pages: next, activeId: newPage.id }, storageKey); return next; });
+    setPages(prev => { const next = [...prev, newPage]; saveData({ pages: next, activeId: newPage.id }, storageKey, projectId); return next; });
     setActiveId(newPage.id);
     setRenamingId(newPage.id);
     setRenameValue(newPage.title);
@@ -607,7 +626,7 @@ export default function GDDEditor({ projectId, onImageRefClick }: {
 
   const commitRename = (id: string) => {
     const trimmed = renameValue.trim();
-    if (trimmed) setPages(prev => { const next = prev.map(p => p.id === id ? { ...p, title: trimmed } : p); saveData({ pages: next, activeId: activeIdRef.current }, storageKey); return next; });
+    if (trimmed) setPages(prev => { const next = prev.map(p => p.id === id ? { ...p, title: trimmed } : p); saveData({ pages: next, activeId: activeIdRef.current }, storageKey, projectId); return next; });
     setRenamingId(null);
   };
 
@@ -624,7 +643,7 @@ export default function GDDEditor({ projectId, onImageRefClick }: {
       setActiveId("home");
     }
     setPages(nextPages);
-    saveData({ pages: nextPages, activeId: nextActiveId }, storageKey);
+    saveData({ pages: nextPages, activeId: nextActiveId }, storageKey, projectId);
   };
 
   // ── Link actions ────────────────────────────────────────────────────────────

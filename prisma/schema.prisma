@@ -77,6 +77,19 @@ model Project {
   invitations ProjectInvitation[]
   inviteLinks ProjectInviteLink[]
   roles       ProjectRole[]
+  canvasData  CanvasData[]
+}
+
+model CanvasData {
+  id         String   @id @default(cuid())
+  projectId  String
+  canvasType String
+  data       Json
+  updatedAt  DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, canvasType])
 }
 
 model ProjectRole {

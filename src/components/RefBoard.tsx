@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { PanelRight, StickyNote, Plus, Eye, EyeOff, X } from "lucide-react";
+import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -284,14 +285,36 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
 
   // ── Persistence ────────────────────────────────────────────────────────────
 
-  useEffect(() => { setImages(loadFromStorage(STORAGE_KEY)); setImagesLoaded(true); }, [STORAGE_KEY]);
   useEffect(() => {
+    (async () => {
+      // 1. Try DB
+      const dbData = await loadCanvasData(projectId, "refboard");
+      if (dbData) {
+        const apiImages = (dbData as PlacedImage[]).map(img => ({
+          ...img,
+          notes: Array.isArray(img.notes) ? img.notes : [],
+        }));
+        setImages(apiImages);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(apiImages)); } catch {}
+      } else {
+        // 2. Fall back to localStorage and migrate
+        const local = loadFromStorage(STORAGE_KEY);
+        setImages(local);
+        if (local.length > 0) syncCanvasData(projectId, "refboard", local);
+      }
+      setImagesLoaded(true);
+    })();
+  }, [STORAGE_KEY]);
+
+  useEffect(() => {
+    if (!imagesLoaded) return;
     const toSave = images.map(img => {
       const orig = focusOrigRef.current[img.id];
       return orig ? { ...img, ...orig } : img;
     });
     saveToStorage(STORAGE_KEY, toSave);
-  }, [images, STORAGE_KEY]);
+    syncCanvasData(projectId, "refboard", toSave);
+  }, [images, STORAGE_KEY, imagesLoaded]);
 
   // ── Focus image programmatically (used by GDD image refs) ─────────────────
 

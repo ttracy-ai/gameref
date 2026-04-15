@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Plus } from "lucide-react";
+import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -43,29 +44,36 @@ export default function CodeLayout({ projectId }: { projectId: string }) {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        // Migrate: ensure every object has a methods array, every method has a descriptions array
-        const normalized = parsed.map((o: GameObject) => ({
-          ...o,
-          variables: (o.variables ?? []).map((v: Variable) => ({
-            ...v,
-            descriptions: v.descriptions ?? [],
-          })),
-          methods: (o.methods ?? []).map((m: Method) => ({
-            ...m,
-            descriptions: m.descriptions ?? [],
-          })),
-        }));
+    const normalize = (parsed: unknown) =>
+      (parsed as GameObject[]).map((o) => ({
+        ...o,
+        variables: (o.variables ?? []).map((v: Variable) => ({ ...v, descriptions: v.descriptions ?? [] })),
+        methods: (o.methods ?? []).map((m: Method) => ({ ...m, descriptions: m.descriptions ?? [] })),
+      }));
+
+    (async () => {
+      // 1. Try DB
+      const dbData = await loadCanvasData(projectId, "codelayout");
+      if (dbData) {
+        const normalized = normalize(dbData);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized)); } catch {}
         setObjects(normalized);
-      } else {
+        return;
+      }
+      // 2. Fall back to localStorage and migrate
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const normalized = normalize(JSON.parse(raw));
+          setObjects(normalized);
+          syncCanvasData(projectId, "codelayout", normalized);
+        } else {
+          setObjects([]);
+        }
+      } catch {
         setObjects([]);
       }
-    } catch {
-      setObjects([]);
-    }
+    })();
   }, []);
 
   useEffect(() => {
@@ -77,6 +85,7 @@ export default function CodeLayout({ projectId }: { projectId: string }) {
 
   function save(next: GameObject[]) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    syncCanvasData(projectId, "codelayout", next);
   }
 
   function update(fn: (prev: GameObject[]) => GameObject[]) {

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Plus, X, ExternalLink, Images } from "lucide-react";
+import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 
 
 const CARD_COLORS = [
@@ -96,18 +97,31 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as BoardState;
+    (async () => {
+      // 1. Try DB (authoritative source)
+      const dbData = await loadCanvasData(projectId, "progress");
+      if (dbData) {
+        const parsed = dbData as BoardState;
         if (!parsed.colorLabels) parsed.colorLabels = DEFAULT_COLOR_LABELS;
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed)); } catch {}
         setBoard(parsed);
-      } else {
+        return;
+      }
+      // 2. Fall back to localStorage and migrate to DB
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as BoardState;
+          if (!parsed.colorLabels) parsed.colorLabels = DEFAULT_COLOR_LABELS;
+          setBoard(parsed);
+          syncCanvasData(projectId, "progress", parsed);
+        } else {
+          setBoard(defaultState());
+        }
+      } catch {
         setBoard(defaultState());
       }
-    } catch {
-      setBoard(defaultState());
-    }
+    })();
   }, []);
 
   useEffect(() => {
@@ -133,6 +147,7 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
       if (!prev) return prev;
       const next = fn(prev);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      syncCanvasData(projectId, "progress", next);
       return next;
     });
   }

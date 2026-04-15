@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { BookOpen, X } from "lucide-react";
+import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -134,12 +135,24 @@ export default function ScriptEditor({ projectId }: { projectId: string }) {
   const taRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      setScript(raw ? JSON.parse(raw) : defaultData());
-    } catch {
-      setScript(defaultData());
-    }
+    (async () => {
+      // 1. Try DB
+      const dbData = await loadCanvasData(projectId, "script");
+      if (dbData) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(dbData)); } catch {}
+        setScript(dbData as ScriptData);
+        return;
+      }
+      // 2. Fall back to localStorage and migrate
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const parsed = raw ? (JSON.parse(raw) as ScriptData) : null;
+        setScript(parsed ?? defaultData());
+        if (parsed) syncCanvasData(projectId, "script", parsed);
+      } catch {
+        setScript(defaultData());
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -154,6 +167,7 @@ export default function ScriptEditor({ projectId }: { projectId: string }) {
 
   function save(data: ScriptData) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    syncCanvasData(projectId, "script", data);
   }
 
   function updateScript(fn: (prev: ScriptData) => ScriptData) {

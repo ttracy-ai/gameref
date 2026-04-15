@@ -64,7 +64,9 @@ export default function CanvasPage() {
           const raw = localStorage.getItem(SESSION_KEY);
           if (raw) {
             const { project, canvas, userId: storedUserId } = JSON.parse(raw);
-            if (storedUserId && storedUserId === userId) {
+            // Restore if userId matches, or if no userId was stored (old format).
+            // The persist effect will write the userId going forward.
+            if (!storedUserId || storedUserId === userId) {
               if (project) setActiveProject(project);
               if (canvas) setActive(canvas);
             }

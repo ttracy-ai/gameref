@@ -4,8 +4,8 @@ import {
   ScrollText, Images, ChevronLeft, ChevronRight, BarChart2,
   Code2, Map, Users, PenLine, FolderOpen, LogOut, Settings,
 } from "lucide-react";
-import { useState, useEffect } from "react";
-import { signOut } from "next-auth/react";
+import { useState, useEffect, useRef } from "react";
+import { useSession, signOut } from "next-auth/react";
 
 const SESSION_KEY = "gameref_session_v1";
 
@@ -45,30 +45,43 @@ function Placeholder({ label }: { label: string }) {
 }
 
 export default function CanvasPage() {
+  const { data: authSession, status } = useSession();
   const [activeProject, setActiveProject] = useState<ActiveProject | null>(null);
   const [active, setActive] = useState<string>("projects");
   const [collapsed, setCollapsed] = useState(false);
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
+  const restoredRef = useRef(false);
 
-  // Restore session on mount
+  // Restore session — only once auth is ready, and only if the stored session
+  // belongs to the current user. A different user always starts at "projects".
   useEffect(() => {
+    if (status === "loading") return;
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
     try {
       const raw = localStorage.getItem(SESSION_KEY);
       if (raw) {
-        const { project, canvas } = JSON.parse(raw);
-        if (project) setActiveProject(project);
-        if (canvas) setActive(canvas);
+        const { project, canvas, userId } = JSON.parse(raw);
+        if (userId && userId === authSession?.user?.id) {
+          if (project) setActiveProject(project);
+          if (canvas) setActive(canvas);
+        }
+        // Different user or no userId stored — stay at "projects" (default)
       }
     } catch {}
     setSessionLoaded(true);
-  }, []);
+  }, [status, authSession?.user?.id]);
 
-  // Persist session whenever project or canvas changes
+  // Persist session (including current user ID) whenever project or canvas changes
   useEffect(() => {
     if (!sessionLoaded) return;
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ project: activeProject, canvas: active }));
-  }, [activeProject, active, sessionLoaded]);
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({ project: activeProject, canvas: active, userId: authSession?.user?.id ?? null })
+    );
+  }, [activeProject, active, sessionLoaded, authSession?.user?.id]);
 
   function handleOpenProject(project: Project) {
     setActiveProject({ id: project.id, name: project.name });

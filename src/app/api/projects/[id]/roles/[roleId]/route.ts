@@ -19,30 +19,46 @@ export async function PATCH(
   const { id: projectId, roleId } = await params;
   const body = await request.json();
 
-  const membership = await getEditorMembership(projectId, session.user.id);
-  if (!membership || !["team_leader", "moderator"].includes(membership.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const [membership, role] = await Promise.all([
+    getEditorMembership(projectId, session.user.id),
+    prisma.projectRole.findUnique({ where: { id: roleId } }),
+  ]);
 
-  const role = await prisma.projectRole.findUnique({ where: { id: roleId } });
+  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!role || role.projectId !== projectId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const isEditor = ["team_leader", "moderator"].includes(membership.role);
   const updates: { name?: string; userId?: string | null } = {};
 
-  if ("name" in body && body.name?.trim()) updates.name = body.name.trim();
+  if ("name" in body && body.name?.trim()) {
+    if (!isEditor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    updates.name = body.name.trim();
+  }
 
   if ("userId" in body) {
-    const newUserId = body.userId ?? null;
-    if (newUserId) {
-      const targetMembership = await prisma.projectMember.findUnique({
-        where: { projectId_userId: { projectId, userId: newUserId } },
-      });
-      if (!targetMembership) {
-        return NextResponse.json({ error: "User is not a member of this project" }, { status: 400 });
+    const newUserId: string | null = body.userId ?? null;
+
+    if (isEditor) {
+      // Leaders/moderators can assign anyone
+      if (newUserId) {
+        const targetMembership = await prisma.projectMember.findUnique({
+          where: { projectId_userId: { projectId, userId: newUserId } },
+        });
+        if (!targetMembership) {
+          return NextResponse.json({ error: "User is not a member of this project" }, { status: 400 });
+        }
+      }
+    } else {
+      // Regular members can only claim an open role or unclaim their own
+      const isClaiming = newUserId === session.user.id && role.userId === null;
+      const isUnclaiming = newUserId === null && role.userId === session.user.id;
+      if (!isClaiming && !isUnclaiming) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }
+
     updates.userId = newUserId;
   }
 

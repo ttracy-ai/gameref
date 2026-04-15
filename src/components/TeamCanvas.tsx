@@ -30,6 +30,7 @@ type TeamData = {
   members: Member[];
   invitations: Invitation[];
   currentUserRole: Role;
+  currentUserId: string;
 };
 
 type RoleUser = {
@@ -445,6 +446,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
 
   const isTeamLeader = data.currentUserRole === "team_leader";
   const canInvite = isTeamLeader || data.currentUserRole === "moderator";
+  const currentUserId = data.currentUserId;
 
   const filledRoles = roles.filter((r) => r.user !== null);
   const openRoles = roles.filter((r) => r.user === null);
@@ -584,50 +586,52 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                         </span>
                       </div>
                     )}
-                    {canInvite && (
-                      <div className="flex items-center gap-1 shrink-0 ml-1">
-                        {/* Reassign dropdown */}
-                        <div className="relative">
-                          <select
-                            value={role.user?.id ?? ""}
-                            disabled={assigningRoleId === role.id}
-                            onChange={(e) => assignRole(role.id, e.target.value || null)}
-                            className="text-xs bg-neutral-700 border border-neutral-600 text-neutral-400 rounded-md pl-2 pr-5 py-0.5 outline-none focus:border-neutral-400 cursor-pointer appearance-none disabled:opacity-50"
-                            title="Reassign or unassign"
+                    <div className="flex items-center gap-1 shrink-0 ml-1">
+                      {canInvite ? (
+                        /* Leaders/mods: full reassign dropdown */
+                        <>
+                          <div className="relative">
+                            <select
+                              value={role.user?.id ?? ""}
+                              disabled={assigningRoleId === role.id}
+                              onChange={(e) => assignRole(role.id, e.target.value || null)}
+                              className="text-xs bg-neutral-700 border border-neutral-600 text-neutral-400 rounded-md pl-2 pr-5 py-0.5 outline-none focus:border-neutral-400 cursor-pointer appearance-none disabled:opacity-50"
+                              title="Reassign or unassign"
+                            >
+                              <option value="">— Open —</option>
+                              {data.members.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {displayName(m)}
+                                </option>
+                              ))}
+                            </select>
+                            {assigningRoleId === role.id ? (
+                              <Loader2 size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 animate-spin" />
+                            ) : (
+                              <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
+                            )}
+                          </div>
+                          <button
+                            onClick={() => deleteRole(role.id)}
+                            disabled={deletingRoleId === role.id}
+                            className="text-neutral-600 hover:text-red-400 transition-colors disabled:opacity-40 ml-0.5"
+                            title="Remove role"
                           >
-                            <option value="">— Open —</option>
-                            {data.members.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {displayName(m)}
-                              </option>
-                            ))}
-                          </select>
-                          {assigningRoleId === role.id ? (
-                            <Loader2
-                              size={10}
-                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 animate-spin"
-                            />
-                          ) : (
-                            <ChevronDown
-                              size={10}
-                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none"
-                            />
-                          )}
-                        </div>
+                            {deletingRoleId === role.id ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                          </button>
+                        </>
+                      ) : role.user?.id === currentUserId ? (
+                        /* Member viewing their own role: unclaim button */
                         <button
-                          onClick={() => deleteRole(role.id)}
-                          disabled={deletingRoleId === role.id}
-                          className="text-neutral-600 hover:text-red-400 transition-colors disabled:opacity-40 ml-0.5"
-                          title="Remove role"
+                          onClick={() => assignRole(role.id, null)}
+                          disabled={assigningRoleId === role.id}
+                          className="text-xs text-neutral-500 hover:text-red-400 border border-neutral-600 hover:border-red-800 rounded-md px-2 py-0.5 transition-colors disabled:opacity-40"
+                          title="Unclaim this role"
                         >
-                          {deletingRoleId === role.id ? (
-                            <Loader2 size={13} className="animate-spin" />
-                          ) : (
-                            <X size={13} />
-                          )}
+                          {assigningRoleId === role.id ? <Loader2 size={11} className="animate-spin inline" /> : "Unclaim"}
                         </button>
-                      </div>
-                    )}
+                      ) : null}
+                    </div>
                   </div>
                   );
                 })}
@@ -647,49 +651,53 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 border" style={{ color: color.accent, borderColor: color.accent, background: "transparent" }}>
                       Open
                     </span>
-                    {canInvite && (
-                      <div className="flex items-center gap-1 shrink-0 ml-1">
-                        <div className="relative">
-                          <select
-                            value=""
-                            disabled={assigningRoleId === role.id}
-                            onChange={(e) => assignRole(role.id, e.target.value || null)}
-                            className="text-xs bg-neutral-700 border border-neutral-600 text-neutral-400 rounded-md pl-2 pr-5 py-0.5 outline-none focus:border-neutral-400 cursor-pointer appearance-none disabled:opacity-50"
-                            title="Assign to member"
+                    <div className="flex items-center gap-1 shrink-0 ml-1">
+                      {canInvite ? (
+                        /* Leaders/mods: assign dropdown + delete */
+                        <>
+                          <div className="relative">
+                            <select
+                              value=""
+                              disabled={assigningRoleId === role.id}
+                              onChange={(e) => assignRole(role.id, e.target.value || null)}
+                              className="text-xs bg-neutral-700 border border-neutral-600 text-neutral-400 rounded-md pl-2 pr-5 py-0.5 outline-none focus:border-neutral-400 cursor-pointer appearance-none disabled:opacity-50"
+                              title="Assign to member"
+                            >
+                              <option value="">Assign…</option>
+                              {data.members.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {displayName(m)}
+                                </option>
+                              ))}
+                            </select>
+                            {assigningRoleId === role.id ? (
+                              <Loader2 size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 animate-spin" />
+                            ) : (
+                              <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
+                            )}
+                          </div>
+                          <button
+                            onClick={() => deleteRole(role.id)}
+                            disabled={deletingRoleId === role.id}
+                            className="text-neutral-600 hover:text-red-400 transition-colors disabled:opacity-40 ml-0.5"
+                            title="Remove role"
                           >
-                            <option value="">Assign…</option>
-                            {data.members.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {displayName(m)}
-                              </option>
-                            ))}
-                          </select>
-                          {assigningRoleId === role.id ? (
-                            <Loader2
-                              size={10}
-                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 animate-spin"
-                            />
-                          ) : (
-                            <ChevronDown
-                              size={10}
-                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none"
-                            />
-                          )}
-                        </div>
+                            {deletingRoleId === role.id ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                          </button>
+                        </>
+                      ) : (
+                        /* Regular members: claim button */
                         <button
-                          onClick={() => deleteRole(role.id)}
-                          disabled={deletingRoleId === role.id}
-                          className="text-neutral-600 hover:text-red-400 transition-colors disabled:opacity-40 ml-0.5"
-                          title="Remove role"
+                          onClick={() => assignRole(role.id, currentUserId)}
+                          disabled={assigningRoleId === role.id}
+                          className="text-xs font-medium border rounded-md px-2 py-0.5 transition-colors disabled:opacity-40"
+                          style={{ color: color.accent, borderColor: color.accent, background: color.bg }}
+                          title="Claim this role"
                         >
-                          {deletingRoleId === role.id ? (
-                            <Loader2 size={13} className="animate-spin" />
-                          ) : (
-                            <X size={13} />
-                          )}
+                          {assigningRoleId === role.id ? <Loader2 size={11} className="animate-spin inline" /> : "Claim"}
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                   );
                 })}

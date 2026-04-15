@@ -51,6 +51,7 @@ export async function GET(
       createdAt: i.createdAt.toISOString(),
     })),
     currentUserRole: membership.role,
+    currentUserId: session.user.id,
   });
 }
 

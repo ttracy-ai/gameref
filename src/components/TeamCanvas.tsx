@@ -76,35 +76,43 @@ const PRESET_ROLES = [
 type RoleColor = { accent: string; bg: string; text: string };
 
 const ROLE_COLOR_MAP: Record<string, RoleColor> = {
-  // Programming — blue
-  "Programmer":           { accent: "#1d4ed8", bg: "#dbeafe", text: "#1e3a8a" },
-  "Lead Programmer":      { accent: "#1e40af", bg: "#bfdbfe", text: "#1e3a8a" },
-  "Gameplay Programmer":  { accent: "#2563eb", bg: "#eff6ff", text: "#1e40af" },
-  // Art — violet/purple
-  "2D Artist":            { accent: "#6d28d9", bg: "#ede9fe", text: "#4c1d95" },
-  "3D Artist":            { accent: "#5b21b6", bg: "#ddd6fe", text: "#3b0764" },
-  "Character Artist":     { accent: "#7c3aed", bg: "#f5f3ff", text: "#4c1d95" },
-  "Concept Artist":       { accent: "#8b5cf6", bg: "#f5f3ff", text: "#5b21b6" },
-  "Animator":             { accent: "#7e22ce", bg: "#f3e8ff", text: "#581c87" },
-  "VFX Artist":           { accent: "#6b21a8", bg: "#f3e8ff", text: "#581c87" },
-  // UI/UX — pink
-  "UI / UX Designer":     { accent: "#be185d", bg: "#fce7f3", text: "#831843" },
-  // Audio — amber
-  "Composer / Musician":  { accent: "#b45309", bg: "#fef3c7", text: "#78350f" },
-  "Sound Designer":       { accent: "#92400e", bg: "#fde68a", text: "#451a03" },
-  // Design — emerald
-  "Game Designer":        { accent: "#047857", bg: "#d1fae5", text: "#064e3b" },
-  "Lead Designer":        { accent: "#065f46", bg: "#a7f3d0", text: "#022c22" },
-  "Level Designer":       { accent: "#059669", bg: "#ecfdf5", text: "#065f46" },
-  // Narrative/Writing — teal/sky
-  "Narrative Designer":   { accent: "#0f766e", bg: "#ccfbf1", text: "#134e4a" },
-  "Writer":               { accent: "#0369a1", bg: "#e0f2fe", text: "#0c4a6e" },
-  // Production — orange
-  "Project Manager":      { accent: "#c2410c", bg: "#ffedd5", text: "#7c2d12" },
+  // Programming — blue/indigo/cyan
+  "Programmer":           { accent: "#1d4ed8", bg: "#dbeafe", text: "#1e3a8a" },   // blue
+  "Lead Programmer":      { accent: "#4338ca", bg: "#e0e7ff", text: "#312e81" },   // indigo
+  "Gameplay Programmer":  { accent: "#0e7490", bg: "#cffafe", text: "#164e63" },   // cyan
+
+  // Art — violet → fuchsia → pink → rose → orange → yellow
+  "2D Artist":            { accent: "#6d28d9", bg: "#ede9fe", text: "#4c1d95" },   // violet
+  "3D Artist":            { accent: "#a21caf", bg: "#fdf4ff", text: "#701a75" },   // fuchsia
+  "Character Artist":     { accent: "#be185d", bg: "#fce7f3", text: "#831843" },   // pink
+  "Concept Artist":       { accent: "#e11d48", bg: "#ffe4e6", text: "#881337" },   // rose
+  "Animator":             { accent: "#c2410c", bg: "#ffedd5", text: "#7c2d12" },   // orange
+  "VFX Artist":           { accent: "#a16207", bg: "#fefce8", text: "#713f12" },   // yellow
+
+  // UI/UX — teal (clean, modern, distinct from art and programming)
+  "UI / UX Designer":     { accent: "#0f766e", bg: "#ccfbf1", text: "#134e4a" },   // teal
+
+  // Audio — amber + lime (warm/organic split)
+  "Composer / Musician":  { accent: "#b45309", bg: "#fef3c7", text: "#78350f" },   // amber
+  "Sound Designer":       { accent: "#4d7c0f", bg: "#ecfccb", text: "#365314" },   // lime
+
+  // Design — emerald / green / sky
+  "Game Designer":        { accent: "#047857", bg: "#d1fae5", text: "#064e3b" },   // emerald
+  "Lead Designer":        { accent: "#15803d", bg: "#dcfce7", text: "#14532d" },   // green
+  "Level Designer":       { accent: "#0369a1", bg: "#e0f2fe", text: "#0c4a6e" },   // sky
+
+  // Narrative/Writing — purple + crimson (imagination vs passion — far from blue)
+  "Narrative Designer":   { accent: "#7c3aed", bg: "#f5f3ff", text: "#5b21b6" },   // purple
+  "Writer":               { accent: "#9f1239", bg: "#ffe4e6", text: "#881337" },   // crimson
+
+  // Production — warm gold (distinct from amber)
+  "Project Manager":      { accent: "#92400e", bg: "#fde68a", text: "#451a03" },   // dark amber/gold
+
   // QA — red
-  "QA Tester":            { accent: "#b91c1c", bg: "#fee2e2", text: "#7f1d1d" },
-  // Voice — lime
-  "Voice Actor":          { accent: "#4d7c0f", bg: "#ecfccb", text: "#365314" },
+  "QA Tester":            { accent: "#b91c1c", bg: "#fee2e2", text: "#7f1d1d" },   // red
+
+  // Voice — lime-green (energetic, performative)
+  "Voice Actor":          { accent: "#3f6212", bg: "#d9f99d", text: "#1a2e05" },   // lime-dark
 };
 
 const GRAY_COLOR: RoleColor = { accent: "#4b5563", bg: "#f3f4f6", text: "#1f2937" };

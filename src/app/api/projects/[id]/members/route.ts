@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { sendProjectInviteEmail } from "@/lib/email";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -64,9 +65,12 @@ export async function POST(
   const { email } = await request.json();
   if (!email?.trim()) return NextResponse.json({ error: "Email required" }, { status: 400 });
 
-  const membership = await prisma.projectMember.findUnique({
-    where: { projectId_userId: { projectId, userId: session.user.id } },
-  });
+  const [membership, project] = await Promise.all([
+    prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId: session.user.id } },
+    }),
+    prisma.project.findUnique({ where: { id: projectId }, select: { name: true } }),
+  ]);
   if (!membership || !["team_leader", "moderator"].includes(membership.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -97,12 +101,22 @@ export async function POST(
     }
     targetUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (!targetUser) {
-      // Pending email invitation
+      // Pending email invitation — store it and send notification email
       await prisma.projectInvitation.upsert({
         where: { projectId_email: { projectId, email: normalizedEmail } },
         update: {},
         create: { projectId, email: normalizedEmail },
       });
+
+      const inviterName = session.user.name ?? session.user.email ?? "Someone";
+      const projectName = project?.name ?? "a project";
+      const signInUrl = `${process.env.NEXTAUTH_URL ?? "https://planaproject.io"}/login`;
+
+      // Fire-and-forget — don't block the response on email delivery
+      sendProjectInviteEmail({ to: normalizedEmail, inviterName, projectName, signInUrl }).catch(
+        (err) => console.error("Failed to send invite email:", err)
+      );
+
       return NextResponse.json({ added: false, pending: true });
     }
   } else {

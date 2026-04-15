@@ -35,12 +35,6 @@ type TodoItem = {
   done: boolean;
 };
 
-type AssignedUser = {
-  id: string;
-  name: string | null;
-  username: string | null;
-};
-
 type Member = {
   id: string;
   name: string | null;
@@ -59,8 +53,10 @@ type Card = {
   imageRefs: string[];
   showTodos: boolean;
   authorId?: string;
+  assignedUserIds?: string[];
+  // legacy fields from older saved data — kept only for migration
   authorUsername?: string;
-  assignedUsers?: AssignedUser[];
+  assignedUsers?: { id: string }[];
 };
 
 type Column = {
@@ -98,7 +94,6 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
   const [refImages, setRefImages] = useState<RefBoardImage[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -127,11 +122,8 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
     fetch(`/api/projects/${projectId}/members`)
       .then((r) => r.json())
       .then((data) => {
-        const list: Member[] = data.members ?? [];
-        setMembers(list);
+        setMembers(data.members ?? []);
         setCurrentUserId(data.currentUserId ?? null);
-        const me = list.find((m) => m.id === data.currentUserId);
-        setCurrentUsername(me?.username ?? me?.name ?? null);
       })
       .catch(() => {});
   }, [projectId]);
@@ -181,8 +173,7 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
     const card: Card = {
       id: makeId(), title, shortDetails: "", details: "", colorIdx: 0, todos: [], imageRefs: [], showTodos: false,
       authorId: currentUserId ?? undefined,
-      authorUsername: currentUsername ?? undefined,
-      assignedUsers: [],
+      assignedUserIds: [],
     };
     update((prev) => ({
       ...prev,
@@ -284,11 +275,14 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
                               >
                                 <div className="px-3 py-2.5">
                                   {(() => {
-                                    const assigned = card.assignedUsers ?? [];
-                                    const byLine = assigned.length > 0
-                                      ? `Assigned: ${assigned.map((u) => u.username ?? u.name ?? "?").join(", ")}`
-                                      : card.authorUsername
-                                      ? `Author: ${card.authorUsername}`
+                                    // Migrate old assignedUsers field to IDs
+                                    const assignedIds = card.assignedUserIds ?? card.assignedUsers?.map((u) => u.id) ?? [];
+                                    const assignedMembers = assignedIds.map((id) => members.find((m) => m.id === id)).filter(Boolean) as Member[];
+                                    const author = members.find((m) => m.id === card.authorId);
+                                    const byLine = assignedMembers.length > 0
+                                      ? `Assigned: ${assignedMembers.map((m) => m.username ?? m.name ?? "?").join(", ")}`
+                                      : author
+                                      ? `Author: ${author.username ?? author.name}`
                                       : null;
                                     return (label || byLine) ? (
                                       <div className="flex items-start justify-between gap-1 mb-1">
@@ -485,7 +479,10 @@ function CardModal({
   const [newTodo, setNewTodo] = useState("");
   const [imageRefs, setImageRefs] = useState<string[]>(card.imageRefs ?? []);
   const [showTodos, setShowTodos] = useState(card.showTodos ?? false);
-  const [assignedUsers, setAssignedUsers] = useState<AssignedUser[]>(card.assignedUsers ?? []);
+  // Migrate old assignedUsers field (array of objects) to plain IDs
+  const [assignedUserIds, setAssignedUserIds] = useState<string[]>(
+    card.assignedUserIds ?? card.assignedUsers?.map((u) => u.id) ?? []
+  );
   const [allImages, setAllImages] = useState<RefBoardImage[]>([]);
   const [showPicker, setShowPicker] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -507,7 +504,7 @@ function CardModal({
       todos,
       imageRefs,
       showTodos,
-      assignedUsers,
+      assignedUserIds,
     });
     onClose();
   }
@@ -703,17 +700,15 @@ function CardModal({
               </label>
               <div className="flex flex-wrap gap-1.5">
                 {members.map((member) => {
-                  const isAssigned = assignedUsers.some((u) => u.id === member.id);
+                  const isAssigned = assignedUserIds.includes(member.id);
                   const displayName = member.username ?? member.name ?? "Unknown";
                   const isMe = member.id === currentUserId;
                   return (
                     <button
                       key={member.id}
                       onClick={() =>
-                        setAssignedUsers((prev) =>
-                          isAssigned
-                            ? prev.filter((u) => u.id !== member.id)
-                            : [...prev, { id: member.id, name: member.name, username: member.username }]
+                        setAssignedUserIds((prev) =>
+                          isAssigned ? prev.filter((id) => id !== member.id) : [...prev, member.id]
                         )
                       }
                       className={`text-xs px-2.5 py-1 rounded-full transition-colors border ${

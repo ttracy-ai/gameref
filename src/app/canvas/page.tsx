@@ -2,7 +2,7 @@
 
 import {
   ScrollText, Images, ChevronLeft, ChevronRight, BarChart2,
-  Code2, Map, Users, PenLine, FolderOpen, LogOut,
+  Code2, Map, Users, PenLine, FolderOpen, LogOut, Settings,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { signOut } from "next-auth/react";
@@ -16,6 +16,7 @@ import ScriptEditor from "@/components/ScriptEditor";
 import CodeLayout from "@/components/CodeLayout";
 import ProjectsBoard, { type Project } from "@/components/ProjectsBoard";
 import TeamCanvas from "@/components/TeamCanvas";
+import SettingsCanvas from "@/components/SettingsCanvas";
 
 type ActiveProject = { id: string; name: string };
 
@@ -176,16 +177,30 @@ export default function CanvasPage() {
           </div>
         )}
 
-        {/* Logout */}
+        {/* Settings + Logout */}
         {!collapsed && (
-          <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            title="Sign out"
-            aria-label="Sign out"
-            className="absolute bottom-10 flex items-center justify-center w-10 h-10 rounded-lg text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700 transition-colors"
-          >
-            <LogOut size={18} />
-          </button>
+          <div className="absolute bottom-10 flex flex-col items-center gap-1">
+            <button
+              onClick={() => setActive("settings")}
+              title="Settings"
+              aria-label="Settings"
+              className={`flex items-center justify-center w-10 h-10 rounded-lg transition-colors ${
+                active === "settings"
+                  ? "bg-neutral-600 text-neutral-100"
+                  : "text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700"
+              }`}
+            >
+              <Settings size={18} />
+            </button>
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              title="Sign out"
+              aria-label="Sign out"
+              className="flex items-center justify-center w-10 h-10 rounded-lg text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700 transition-colors"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
         )}
 
         {/* Collapse toggle */}
@@ -228,6 +243,8 @@ export default function CanvasPage() {
         <TeamCanvas key={projectId} projectId={projectId} />
       ) : active === "writing" ? (
         <ScriptEditor key={projectId} projectId={projectId} />
+      ) : active === "settings" ? (
+        <SettingsCanvas />
       ) : null}
 
     </div>

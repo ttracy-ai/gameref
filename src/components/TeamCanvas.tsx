@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Loader2, X, UserPlus, Crown, User, Shield, Link,
   RefreshCw, Copy, Check, Briefcase, Plus, ChevronDown,
@@ -46,7 +46,7 @@ type ProjectRole = {
   user: RoleUser | null;
 };
 
-// ── Preset roles ───────────────────────────────────────────────────────────────
+// ── Preset roles & colors ──────────────────────────────────────────────────────
 
 const PRESET_ROLES = [
   "Programmer",
@@ -71,6 +71,46 @@ const PRESET_ROLES = [
   "Voice Actor",
   "Custom…",
 ] as const;
+
+type RoleColor = { accent: string; bg: string };
+
+const ROLE_COLOR_MAP: Record<string, RoleColor> = {
+  // Programming — blue
+  "Programmer":           { accent: "#3b82f6", bg: "rgba(59,130,246,0.09)" },
+  "Lead Programmer":      { accent: "#2563eb", bg: "rgba(37,99,235,0.09)" },
+  "Gameplay Programmer":  { accent: "#60a5fa", bg: "rgba(96,165,250,0.09)" },
+  // Art — violet/purple
+  "2D Artist":            { accent: "#8b5cf6", bg: "rgba(139,92,246,0.09)" },
+  "3D Artist":            { accent: "#7c3aed", bg: "rgba(124,58,237,0.09)" },
+  "Character Artist":     { accent: "#a78bfa", bg: "rgba(167,139,250,0.09)" },
+  "Concept Artist":       { accent: "#c084fc", bg: "rgba(192,132,252,0.09)" },
+  "Animator":             { accent: "#9333ea", bg: "rgba(147,51,234,0.09)" },
+  "VFX Artist":           { accent: "#6d28d9", bg: "rgba(109,40,217,0.09)" },
+  // UI/UX — pink
+  "UI / UX Designer":     { accent: "#ec4899", bg: "rgba(236,72,153,0.09)" },
+  // Audio — amber
+  "Composer / Musician":  { accent: "#f59e0b", bg: "rgba(245,158,11,0.09)" },
+  "Sound Designer":       { accent: "#d97706", bg: "rgba(217,119,6,0.09)" },
+  // Design — emerald
+  "Game Designer":        { accent: "#10b981", bg: "rgba(16,185,129,0.09)" },
+  "Lead Designer":        { accent: "#059669", bg: "rgba(5,150,105,0.09)" },
+  "Level Designer":       { accent: "#34d399", bg: "rgba(52,211,153,0.09)" },
+  // Narrative/Writing — teal/sky
+  "Narrative Designer":   { accent: "#14b8a6", bg: "rgba(20,184,166,0.09)" },
+  "Writer":               { accent: "#0ea5e9", bg: "rgba(14,165,233,0.09)" },
+  // Production — orange
+  "Project Manager":      { accent: "#f97316", bg: "rgba(249,115,22,0.09)" },
+  // QA — red
+  "QA Tester":            { accent: "#ef4444", bg: "rgba(239,68,68,0.09)" },
+  // Voice — lime
+  "Voice Actor":          { accent: "#84cc16", bg: "rgba(132,204,22,0.09)" },
+};
+
+const GRAY_COLOR: RoleColor  = { accent: "#6b7280", bg: "rgba(107,114,128,0.09)" };
+
+function getRoleColor(name: string): RoleColor {
+  return ROLE_COLOR_MAP[name] ?? GRAY_COLOR;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -392,6 +432,22 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
   const filledRoles = roles.filter((r) => r.user !== null);
   const openRoles = roles.filter((r) => r.user === null);
 
+  // Map each member id → their role color (gray if multiple roles, null if none)
+  const memberColorMap = useMemo<Record<string, RoleColor | null>>(() => {
+    const roleNames: Record<string, string[]> = {};
+    for (const r of roles) {
+      if (r.user) {
+        if (!roleNames[r.user.id]) roleNames[r.user.id] = [];
+        roleNames[r.user.id].push(r.name);
+      }
+    }
+    const result: Record<string, RoleColor | null> = {};
+    for (const [userId, names] of Object.entries(roleNames)) {
+      result[userId] = names.length === 1 ? getRoleColor(names[0]) : GRAY_COLOR;
+    }
+    return result;
+  }, [roles]);
+
   return (
     <main className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-900">
       <div className="flex-1 overflow-y-auto">
@@ -415,8 +471,13 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             <div className="divide-y divide-neutral-700/50">
               {data.members.map((member) => {
                 const saving = changingRole[member.id];
+                const memberColor = memberColorMap[member.id] ?? null;
                 return (
-                  <div key={member.id} className="flex items-center gap-3 px-5 py-3">
+                  <div
+                    key={member.id}
+                    className="flex items-center gap-3 px-5 py-3 transition-colors"
+                    style={memberColor ? { background: memberColor.bg } : undefined}
+                  >
                     <Avatar name={member.name} username={member.username} image={member.image} />
                     <div className="flex-1 min-w-0">
                       <p className="text-neutral-200 text-sm font-medium truncate">
@@ -495,8 +556,14 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
               <div className="divide-y divide-neutral-700/50">
 
                 {/* Filled roles */}
-                {filledRoles.map((role) => (
-                  <div key={role.id} className="flex items-center gap-3 px-5 py-3">
+                {filledRoles.map((role) => {
+                  const color = getRoleColor(role.name);
+                  return (
+                  <div
+                    key={role.id}
+                    className="flex items-center gap-3 py-3 pr-5"
+                    style={{ background: color.bg, borderLeft: `3px solid ${color.accent}`, paddingLeft: "calc(1.25rem - 3px)" }}
+                  >
                     <div className="flex-1 min-w-0">
                       <p className="text-neutral-300 text-sm font-medium truncate">{role.name}</p>
                     </div>
@@ -558,11 +625,18 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
 
                 {/* Open roles */}
-                {openRoles.map((role) => (
-                  <div key={role.id} className="flex items-center gap-3 px-5 py-3">
+                {openRoles.map((role) => {
+                  const color = getRoleColor(role.name);
+                  return (
+                  <div
+                    key={role.id}
+                    className="flex items-center gap-3 py-3 pr-5"
+                    style={{ background: color.bg, borderLeft: `3px solid ${color.accent}`, paddingLeft: "calc(1.25rem - 3px)" }}
+                  >
                     <div className="flex-1 min-w-0">
                       <p className="text-neutral-400 text-sm font-medium truncate">{role.name}</p>
                     </div>
@@ -613,7 +687,8 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
 
                 {/* Add role form */}
                 {addingRole && (

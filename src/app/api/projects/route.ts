@@ -6,6 +6,28 @@ export async function GET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Fulfill any pending email invitations that weren't caught at sign-in time
+  // (e.g. user was already signed in when invited, or signIn callback edge cases)
+  if (session.user.email) {
+    const pending = await prisma.projectInvitation.findMany({
+      where: { email: session.user.email.toLowerCase() },
+    });
+    if (pending.length > 0) {
+      await Promise.all(
+        pending.map((inv) =>
+          prisma.projectMember.upsert({
+            where: { projectId_userId: { projectId: inv.projectId, userId: session.user.id } },
+            update: {},
+            create: { projectId: inv.projectId, userId: session.user.id, role: "member" },
+          })
+        )
+      );
+      await prisma.projectInvitation.deleteMany({
+        where: { email: session.user.email.toLowerCase() },
+      });
+    }
+  }
+
   const memberships = await prisma.projectMember.findMany({
     where: { userId: session.user.id },
     include: { project: true },

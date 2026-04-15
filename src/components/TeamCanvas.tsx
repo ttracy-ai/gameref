@@ -72,41 +72,41 @@ const PRESET_ROLES = [
   "Custom…",
 ] as const;
 
-type RoleColor = { accent: string; bg: string };
+type RoleColor = { accent: string; bg: string; text: string };
 
 const ROLE_COLOR_MAP: Record<string, RoleColor> = {
   // Programming — blue
-  "Programmer":           { accent: "#3b82f6", bg: "rgba(59,130,246,0.09)" },
-  "Lead Programmer":      { accent: "#2563eb", bg: "rgba(37,99,235,0.09)" },
-  "Gameplay Programmer":  { accent: "#60a5fa", bg: "rgba(96,165,250,0.09)" },
+  "Programmer":           { accent: "#1d4ed8", bg: "#dbeafe", text: "#1e3a8a" },
+  "Lead Programmer":      { accent: "#1e40af", bg: "#bfdbfe", text: "#1e3a8a" },
+  "Gameplay Programmer":  { accent: "#2563eb", bg: "#eff6ff", text: "#1e40af" },
   // Art — violet/purple
-  "2D Artist":            { accent: "#8b5cf6", bg: "rgba(139,92,246,0.09)" },
-  "3D Artist":            { accent: "#7c3aed", bg: "rgba(124,58,237,0.09)" },
-  "Character Artist":     { accent: "#a78bfa", bg: "rgba(167,139,250,0.09)" },
-  "Concept Artist":       { accent: "#c084fc", bg: "rgba(192,132,252,0.09)" },
-  "Animator":             { accent: "#9333ea", bg: "rgba(147,51,234,0.09)" },
-  "VFX Artist":           { accent: "#6d28d9", bg: "rgba(109,40,217,0.09)" },
+  "2D Artist":            { accent: "#6d28d9", bg: "#ede9fe", text: "#4c1d95" },
+  "3D Artist":            { accent: "#5b21b6", bg: "#ddd6fe", text: "#3b0764" },
+  "Character Artist":     { accent: "#7c3aed", bg: "#f5f3ff", text: "#4c1d95" },
+  "Concept Artist":       { accent: "#8b5cf6", bg: "#f5f3ff", text: "#5b21b6" },
+  "Animator":             { accent: "#7e22ce", bg: "#f3e8ff", text: "#581c87" },
+  "VFX Artist":           { accent: "#6b21a8", bg: "#f3e8ff", text: "#581c87" },
   // UI/UX — pink
-  "UI / UX Designer":     { accent: "#ec4899", bg: "rgba(236,72,153,0.09)" },
+  "UI / UX Designer":     { accent: "#be185d", bg: "#fce7f3", text: "#831843" },
   // Audio — amber
-  "Composer / Musician":  { accent: "#f59e0b", bg: "rgba(245,158,11,0.09)" },
-  "Sound Designer":       { accent: "#d97706", bg: "rgba(217,119,6,0.09)" },
+  "Composer / Musician":  { accent: "#b45309", bg: "#fef3c7", text: "#78350f" },
+  "Sound Designer":       { accent: "#92400e", bg: "#fde68a", text: "#451a03" },
   // Design — emerald
-  "Game Designer":        { accent: "#10b981", bg: "rgba(16,185,129,0.09)" },
-  "Lead Designer":        { accent: "#059669", bg: "rgba(5,150,105,0.09)" },
-  "Level Designer":       { accent: "#34d399", bg: "rgba(52,211,153,0.09)" },
+  "Game Designer":        { accent: "#047857", bg: "#d1fae5", text: "#064e3b" },
+  "Lead Designer":        { accent: "#065f46", bg: "#a7f3d0", text: "#022c22" },
+  "Level Designer":       { accent: "#059669", bg: "#ecfdf5", text: "#065f46" },
   // Narrative/Writing — teal/sky
-  "Narrative Designer":   { accent: "#14b8a6", bg: "rgba(20,184,166,0.09)" },
-  "Writer":               { accent: "#0ea5e9", bg: "rgba(14,165,233,0.09)" },
+  "Narrative Designer":   { accent: "#0f766e", bg: "#ccfbf1", text: "#134e4a" },
+  "Writer":               { accent: "#0369a1", bg: "#e0f2fe", text: "#0c4a6e" },
   // Production — orange
-  "Project Manager":      { accent: "#f97316", bg: "rgba(249,115,22,0.09)" },
+  "Project Manager":      { accent: "#c2410c", bg: "#ffedd5", text: "#7c2d12" },
   // QA — red
-  "QA Tester":            { accent: "#ef4444", bg: "rgba(239,68,68,0.09)" },
+  "QA Tester":            { accent: "#b91c1c", bg: "#fee2e2", text: "#7f1d1d" },
   // Voice — lime
-  "Voice Actor":          { accent: "#84cc16", bg: "rgba(132,204,22,0.09)" },
+  "Voice Actor":          { accent: "#4d7c0f", bg: "#ecfccb", text: "#365314" },
 };
 
-const GRAY_COLOR: RoleColor  = { accent: "#6b7280", bg: "rgba(107,114,128,0.09)" };
+const GRAY_COLOR: RoleColor = { accent: "#4b5563", bg: "#f3f4f6", text: "#1f2937" };
 
 function getRoleColor(name: string): RoleColor {
   return ROLE_COLOR_MAP[name] ?? GRAY_COLOR;
@@ -481,7 +481,10 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                   >
                     <Avatar name={member.name} username={member.username} image={member.image} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-neutral-200 text-sm font-medium truncate">
+                      <p
+                        className="text-sm font-medium truncate"
+                        style={{ color: memberColor ? memberColor.text : undefined }}
+                      >
                         {displayName(member)}
                       </p>
                     </div>
@@ -566,7 +569,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                     style={{ background: color.bg, borderLeft: `3px solid ${color.accent}`, paddingLeft: "calc(1.25rem - 3px)" }}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-neutral-300 text-sm font-medium truncate">{role.name}</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: color.text }}>{role.name}</p>
                     </div>
                     {role.user && (
                       <div className="flex items-center gap-2 shrink-0">
@@ -576,7 +579,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                           image={role.user.image}
                           size={6}
                         />
-                        <span className="text-neutral-400 text-xs truncate max-w-[120px]">
+                        <span className="text-xs font-medium truncate max-w-[120px]" style={{ color: color.text, opacity: 0.75 }}>
                           {roleDisplayName(role.user)}
                         </span>
                       </div>
@@ -639,9 +642,9 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                     style={{ background: color.bg, borderLeft: `3px solid ${color.accent}`, paddingLeft: "calc(1.25rem - 3px)" }}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-neutral-400 text-sm font-medium truncate">{role.name}</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: color.text }}>{role.name}</p>
                     </div>
-                    <span className="text-xs text-emerald-600 border border-emerald-900 bg-emerald-950/40 px-2 py-0.5 rounded-full shrink-0">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 border" style={{ color: color.accent, borderColor: color.accent, background: "transparent" }}>
                       Open
                     </span>
                     {canInvite && (

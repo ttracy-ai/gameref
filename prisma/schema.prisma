@@ -73,6 +73,17 @@ model Project {
   owner       User                @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members     ProjectMember[]
   invitations ProjectInvitation[]
+  inviteLinks ProjectInviteLink[]
+}
+
+model ProjectInviteLink {
+  id        String   @id @default(cuid())
+  token     String   @unique @default(cuid())
+  projectId String
+  createdBy String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model ProjectMember {

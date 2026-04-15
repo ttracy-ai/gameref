@@ -6,7 +6,7 @@ const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
-  if (!req.auth && !pathname.startsWith("/login") && !pathname.startsWith("/api/auth")) {
+  if (!req.auth && !pathname.startsWith("/login") && !pathname.startsWith("/api/auth") && !pathname.startsWith("/invite")) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 });

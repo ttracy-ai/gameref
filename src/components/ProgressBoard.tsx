@@ -35,6 +35,20 @@ type TodoItem = {
   done: boolean;
 };
 
+type AssignedUser = {
+  id: string;
+  name: string | null;
+  username: string | null;
+};
+
+type Member = {
+  id: string;
+  name: string | null;
+  username: string | null;
+  image: string | null;
+  role: string;
+};
+
 type Card = {
   id: string;
   title: string;
@@ -44,6 +58,9 @@ type Card = {
   todos: TodoItem[];
   imageRefs: string[];
   showTodos: boolean;
+  authorId?: string;
+  authorUsername?: string;
+  assignedUsers?: AssignedUser[];
 };
 
 type Column = {
@@ -79,6 +96,9 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newCardTitle, setNewCardTitle] = useState("");
   const [refImages, setRefImages] = useState<RefBoardImage[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -101,6 +121,20 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
       if (raw) setRefImages(JSON.parse(raw) as RefBoardImage[]);
     } catch {}
   }, []);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json())
+      .then((data) => {
+        const list: Member[] = data.members ?? [];
+        setMembers(list);
+        setCurrentUserId(data.currentUserId ?? null);
+        const me = list.find((m) => m.id === data.currentUserId);
+        setCurrentUsername(me?.username ?? me?.name ?? null);
+      })
+      .catch(() => {});
+  }, [projectId]);
 
   function update(fn: (prev: BoardState) => BoardState) {
     setBoard((prev) => {
@@ -144,7 +178,12 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
       setAddingTo(null);
       return;
     }
-    const card: Card = { id: makeId(), title, shortDetails: "", details: "", colorIdx: 0, todos: [], imageRefs: [], showTodos: false };
+    const card: Card = {
+      id: makeId(), title, shortDetails: "", details: "", colorIdx: 0, todos: [], imageRefs: [], showTodos: false,
+      authorId: currentUserId ?? undefined,
+      authorUsername: currentUsername ?? undefined,
+      assignedUsers: [],
+    };
     update((prev) => ({
       ...prev,
       cards: { ...prev.cards, [colId]: [...(prev.cards[colId] ?? []), card] },
@@ -244,14 +283,32 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
                                 }}
                               >
                                 <div className="px-3 py-2.5">
-                                  {label && (
-                                    <p
-                                      className="text-xs font-semibold uppercase tracking-wider mb-1"
-                                      style={{ color: strip, fontSize: 10 }}
-                                    >
-                                      {label}
-                                    </p>
-                                  )}
+                                  {(() => {
+                                    const assigned = card.assignedUsers ?? [];
+                                    const byLine = assigned.length > 0
+                                      ? `Assigned: ${assigned.map((u) => u.username ?? u.name ?? "?").join(", ")}`
+                                      : card.authorUsername
+                                      ? `Author: ${card.authorUsername}`
+                                      : null;
+                                    return (label || byLine) ? (
+                                      <div className="flex items-start justify-between gap-1 mb-1">
+                                        <span
+                                          className="font-semibold uppercase tracking-wider"
+                                          style={{ color: strip, fontSize: 10 }}
+                                        >
+                                          {label}
+                                        </span>
+                                        {byLine && (
+                                          <span
+                                            className="text-right shrink-0 truncate max-w-[55%]"
+                                            style={{ fontSize: 10, color: "#737373", lineHeight: 1.3 }}
+                                          >
+                                            {byLine}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : null;
+                                  })()}
                                   <p className="text-sm text-neutral-900 leading-snug font-medium">
                                     {card.title}
                                   </p>
@@ -377,6 +434,8 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
           card={editingCard.card}
           colorLabels={board.colorLabels}
           refboardKey={REFBOARD_KEY}
+          members={members}
+          currentUserId={currentUserId}
           onUpdate={(updated) => {
             updateCard(editingCard.colId, updated);
             setEditingCard({ ...editingCard, card: updated });
@@ -399,6 +458,8 @@ function CardModal({
   card,
   colorLabels,
   refboardKey,
+  members,
+  currentUserId,
   onUpdate,
   onUpdateLabel,
   onImageRefClick,
@@ -408,6 +469,8 @@ function CardModal({
   card: Card;
   colorLabels: string[];
   refboardKey: string;
+  members: Member[];
+  currentUserId: string | null;
   onUpdate: (card: Card) => void;
   onUpdateLabel: (idx: number, label: string) => void;
   onImageRefClick?: (imageId: string) => void;
@@ -422,6 +485,7 @@ function CardModal({
   const [newTodo, setNewTodo] = useState("");
   const [imageRefs, setImageRefs] = useState<string[]>(card.imageRefs ?? []);
   const [showTodos, setShowTodos] = useState(card.showTodos ?? false);
+  const [assignedUsers, setAssignedUsers] = useState<AssignedUser[]>(card.assignedUsers ?? []);
   const [allImages, setAllImages] = useState<RefBoardImage[]>([]);
   const [showPicker, setShowPicker] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -443,6 +507,7 @@ function CardModal({
       todos,
       imageRefs,
       showTodos,
+      assignedUsers,
     });
     onClose();
   }
@@ -629,6 +694,41 @@ function CardModal({
               )}
             </div>
           </div>
+
+          {/* Assignment */}
+          {members.length > 0 && (
+            <div>
+              <label className="text-xs text-neutral-500 uppercase tracking-wider mb-2 block">
+                Assigned To
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {members.map((member) => {
+                  const isAssigned = assignedUsers.some((u) => u.id === member.id);
+                  const displayName = member.username ?? member.name ?? "Unknown";
+                  const isMe = member.id === currentUserId;
+                  return (
+                    <button
+                      key={member.id}
+                      onClick={() =>
+                        setAssignedUsers((prev) =>
+                          isAssigned
+                            ? prev.filter((u) => u.id !== member.id)
+                            : [...prev, { id: member.id, name: member.name, username: member.username }]
+                        )
+                      }
+                      className={`text-xs px-2.5 py-1 rounded-full transition-colors border ${
+                        isAssigned
+                          ? "bg-neutral-500 border-neutral-400 text-neutral-100"
+                          : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:text-neutral-200 hover:border-neutral-500"
+                      }`}
+                    >
+                      {displayName}{isMe ? " (you)" : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Image references */}
           <div>

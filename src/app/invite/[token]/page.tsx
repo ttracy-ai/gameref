@@ -10,7 +10,7 @@ const LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQIAAAECCAYAAAAVT9lQ
 type State =
   | { status: "loading" }
   | { status: "invalid" }
-  | { status: "joining" }
+  | { status: "joining"; projectName: string }
   | { status: "done"; projectName: string }
   | { status: "ready"; projectName: string };
 
@@ -36,7 +36,7 @@ export default function InvitePage() {
   // Once we know the token is valid and the user is signed in, join automatically
   useEffect(() => {
     if (state.status !== "ready" || sessionStatus !== "authenticated") return;
-    setState({ status: "joining" });
+    setState({ status: "joining", projectName: state.projectName });
     fetch(`/api/invite/${token}`, { method: "POST" })
       .then((r) => r.json())
       .then((d) => {

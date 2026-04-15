@@ -408,6 +408,23 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
     }
   }
 
+  // ── Derived color map (must be before early returns — Rules of Hooks) ────────
+
+  const memberColorMap = useMemo<Record<string, RoleColor | null>>(() => {
+    const roleNames: Record<string, string[]> = {};
+    for (const r of roles) {
+      if (r.user) {
+        if (!roleNames[r.user.id]) roleNames[r.user.id] = [];
+        roleNames[r.user.id].push(r.name);
+      }
+    }
+    const result: Record<string, RoleColor | null> = {};
+    for (const [userId, names] of Object.entries(roleNames)) {
+      result[userId] = names.length === 1 ? getRoleColor(names[0]) : GRAY_COLOR;
+    }
+    return result;
+  }, [roles]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -431,22 +448,6 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
 
   const filledRoles = roles.filter((r) => r.user !== null);
   const openRoles = roles.filter((r) => r.user === null);
-
-  // Map each member id → their role color (gray if multiple roles, null if none)
-  const memberColorMap = useMemo<Record<string, RoleColor | null>>(() => {
-    const roleNames: Record<string, string[]> = {};
-    for (const r of roles) {
-      if (r.user) {
-        if (!roleNames[r.user.id]) roleNames[r.user.id] = [];
-        roleNames[r.user.id].push(r.name);
-      }
-    }
-    const result: Record<string, RoleColor | null> = {};
-    for (const [userId, names] of Object.entries(roleNames)) {
-      result[userId] = names.length === 1 ? getRoleColor(names[0]) : GRAY_COLOR;
-    }
-    return result;
-  }, [roles]);
 
   return (
     <main className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-900">

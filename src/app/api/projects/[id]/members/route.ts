@@ -19,7 +19,13 @@ export async function GET(
   const [members, invitations] = await Promise.all([
     prisma.projectMember.findMany({
       where: { projectId },
-      include: { user: true },
+      include: {
+        user: {
+          include: {
+            accounts: { where: { provider: "discord" }, select: { provider: true } },
+          },
+        },
+      },
       orderBy: { joinedAt: "asc" },
     }),
     prisma.projectInvitation.findMany({
@@ -34,7 +40,7 @@ export async function GET(
       name: m.user.name,
       username: m.user.username,
       email: m.user.email,
-      image: m.user.image,
+      image: m.user.accounts.length > 0 ? m.user.image : null,
       role: m.role,
       joinedAt: m.joinedAt.toISOString(),
     })),

@@ -39,11 +39,9 @@ function Avatar({ name, username, image }: { name: string | null; username: stri
       />
     );
   }
-  const label = username ?? name ?? "?";
-  const initials = label.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   return (
-    <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center text-xs font-semibold text-neutral-300 shrink-0">
-      {initials}
+    <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center shrink-0">
+      <User size={16} className="text-neutral-500" />
     </div>
   );
 }
@@ -219,9 +217,6 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
                     <p className="text-neutral-200 text-sm font-medium truncate">
                       {displayName(member)}
                     </p>
-                    {member.username && (
-                      <p className="text-neutral-500 text-xs truncate">{member.email}</p>
-                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {member.role === "owner" ? (

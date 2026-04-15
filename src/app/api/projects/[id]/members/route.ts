@@ -40,7 +40,7 @@ export async function GET(
       name: m.user.name,
       username: m.user.username,
       email: m.user.email,
-      image: m.user.accounts.length > 0 ? m.user.image : null,
+      image: m.user.accounts.length > 0 ? (m.user.discordImage ?? m.user.image) : null,
       role: m.role,
       joinedAt: m.joinedAt.toISOString(),
     })),

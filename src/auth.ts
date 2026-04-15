@@ -24,21 +24,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           await prisma.projectInvitation.delete({ where: { id: inv.id } });
         }
 
-        // Auto-set username from Discord if the user doesn't have one yet.
+        // Auto-set username and save Discord avatar when signing in with Discord.
         if (account?.provider === "discord" && profile) {
-          const discordProfile = profile as { username?: string };
+          const discordProfile = profile as { id?: string; username?: string; avatar?: string };
+          const updates: Record<string, string> = {};
+
+          // Save Discord avatar URL so it persists even when user later logs in with Google.
+          if (discordProfile.id && discordProfile.avatar) {
+            updates.discordImage = `https://cdn.discordapp.com/avatars/${discordProfile.id}/${discordProfile.avatar}.png`;
+          }
+
+          // Auto-set username if the user doesn't have one yet.
           if (discordProfile.username) {
             const existing = await prisma.user.findUnique({ where: { id: user.id } });
             if (existing && !existing.username) {
-              // Try the Discord username; if taken, leave blank for manual entry.
               const taken = await prisma.user.findUnique({ where: { username: discordProfile.username } });
-              if (!taken) {
-                await prisma.user.update({
-                  where: { id: user.id },
-                  data: { username: discordProfile.username },
-                });
-              }
+              if (!taken) updates.username = discordProfile.username;
             }
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await prisma.user.update({ where: { id: user.id }, data: updates });
           }
         }
       } catch (e) {

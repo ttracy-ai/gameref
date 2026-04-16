@@ -7,11 +7,7 @@ const client = createClient({
 });
 
 type Presence = Record<string, never>;
-
-// Storage is per-room; `initialized` tracks whether the Yjs doc has been seeded from DB.
-type Storage = {
-  initialized: boolean;
-};
+type Storage  = Record<string, never>;
 
 export type LiveblocksUserInfo = {
   name: string;
@@ -26,9 +22,6 @@ type UserMeta = {
 
 export const {
   RoomProvider,
-  useRoom,
   useOthers,
   useSelf,
-  useStorage,
-  useMutation,
 } = createRoomContext<Presence, Storage, UserMeta>(client);

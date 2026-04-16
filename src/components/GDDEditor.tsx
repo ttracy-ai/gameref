@@ -2,18 +2,11 @@
 
 import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Underline from "@tiptap/extension-underline";
 import Placeholder from "@tiptap/extension-placeholder";
-import Collaboration from "@tiptap/extension-collaboration";
-import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import { Mark, Node as TipTapNode, mergeAttributes } from "@tiptap/core";
 import type { NodeViewProps } from "@tiptap/core";
-import * as Y from "yjs";
-import { LiveblocksYjsProvider } from "@liveblocks/yjs";
-import {
-  RoomProvider, useRoom, useOthers, useSelf,
-  useStorage, useMutation,
-} from "@/lib/liveblocks";
+import { useLiveblocksExtension } from "@liveblocks/react-tiptap";
+import { RoomProvider, useOthers } from "@/lib/liveblocks";
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from "react";
@@ -449,7 +442,6 @@ interface CollaborativePageEditorProps {
   pages: GDDPage[];
   activeId: string;
   initialHtml: string;
-  hasDbLoaded: boolean;
   dropdownOpen: boolean;
   setDropdownOpen: (v: boolean) => void;
   renamingId: string | null;
@@ -466,23 +458,14 @@ interface CollaborativePageEditorProps {
 }
 
 function CollaborativePageEditor({
-  projectId, pageId, pages, activeId, initialHtml, hasDbLoaded,
+  projectId, pageId, pages, activeId, initialHtml,
   dropdownOpen, setDropdownOpen, renamingId, setRenamingId, renameValue, setRenameValue,
   onSwitchPage, onAddPage, onDeletePage, onCommitRename, onContentChange,
   onImageRefClick, refboardKey,
 }: CollaborativePageEditorProps) {
-  // Liveblocks
-  // initialized === null  → storage still loading
-  // initialized === false → room is new, needs seeding
-  // initialized === true  → room already has content
-  const room          = useRoom();
-  const self          = useSelf();
-  const initialized   = useStorage(root => root.initialized);
-  const markInitialized = useMutation(({ storage }) => { storage.set("initialized", true); }, []);
-
-  // Yjs — stable across renders; destroyed on unmount
-  const yDoc     = useMemo(() => new Y.Doc(), []);
-  const provider = useMemo(() => new LiveblocksYjsProvider(room, yDoc), [room, yDoc]);
+  // Liveblocks — handles Yjs sync, cursors, and initial seeding all in one extension.
+  // Cursor user info (name, color) comes automatically from the /api/liveblocks-auth token.
+  const liveblocks = useLiveblocksExtension({ initialContent: initialHtml || undefined });
 
   // Local UI state
   const [pickerPos, setPickerPos]       = useState<{ x: number; y: number } | null>(null);
@@ -499,15 +482,10 @@ function CollaborativePageEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ undoRedo: false, heading: { levels: [1, 2, 3] } }),
-      Underline,
       Placeholder.configure({ placeholder: "Start writing…" }),
       PageLink,
       ImageRef,
-      Collaboration.configure({ document: yDoc }),
-      CollaborationCursor.configure({
-        provider,
-        user: { name: "…", color: "#888" }, // placeholder; updated below
-      }),
+      liveblocks,
     ],
     content: "",
     editorProps: {
@@ -523,28 +501,6 @@ function CollaborativePageEditor({
     },
   });
 
-  // Update cursor label once self info arrives
-  useEffect(() => {
-    if (!editor || !self?.info) return;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (editor.commands as any).updateUser?.({ name: self.info.name, color: self.info.color });
-    } catch {}
-    // Fallback: set via Y.js awareness directly
-    provider.awareness?.setLocalStateField("user", { name: self.info.name, color: self.info.color });
-  }, [editor, self?.info?.name, self?.info?.color]);
-
-  // Seed Yjs doc from DB if this is a brand-new room.
-  // initialized === null means storage hasn't loaded yet — wait.
-  // initialized === false means no one has seeded this room yet.
-  useEffect(() => {
-    if (!editor || initialized !== false || !hasDbLoaded) return;
-    if (initialHtml) editor.commands.setContent(initialHtml);
-    markInitialized();
-  // initialHtml intentionally omitted: it's always the correct value when deps are ready
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, initialized, hasDbLoaded]);
-
   // Sync content changes back to our DB (snapshot backup)
   useEffect(() => {
     if (!editor) return;
@@ -552,14 +508,6 @@ function CollaborativePageEditor({
     editor.on("update", handleUpdate);
     return () => { editor.off("update", handleUpdate); };
   }, [editor, pageId, onContentChange]);
-
-  // Cleanup Yjs resources on page switch / unmount
-  useEffect(() => {
-    return () => {
-      provider.destroy();
-      yDoc.destroy();
-    };
-  }, [provider, yDoc]);
 
   // Focus rename input when it appears
   useEffect(() => {
@@ -858,29 +806,31 @@ function CollaborativePageEditor({
         .gdd-editor span.gdd-page-link { color: #7dd3fc; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(125,211,252,0.4); cursor: pointer; transition: color 0.1s; }
         .gdd-editor span.gdd-page-link:hover { color: #bae6fd; text-decoration-color: rgba(186,230,253,0.5); }
 
-        /* Collaboration cursors */
-        .collaboration-cursor__caret {
-          border-left: 1.5px solid;
-          border-right: 1.5px solid;
-          margin-left: -1px;
-          margin-right: -1px;
-          pointer-events: none;
+        /* Collaboration cursors (Liveblocks) */
+        .collaboration-cursor__caret,
+        .collaboration-carets__caret {
           position: relative;
+          margin-inline-start: -1px;
+          margin-inline-end: -1px;
+          border-inline-start: 1.5px solid;
+          border-inline-end: 1.5px solid;
           word-break: normal;
+          pointer-events: none;
         }
-        .collaboration-cursor__label {
-          border-radius: 3px 3px 3px 0;
+        .collaboration-cursor__label,
+        .collaboration-carets__label {
+          position: absolute;
+          inset-inline-start: -1px;
+          inset-block-start: -1.4em;
+          padding: 1px 6px;
+          border-radius: 4px 4px 4px 0;
           color: #fff;
           font-size: 11px;
           font-weight: 600;
-          left: -1.5px;
           line-height: normal;
-          padding: 1px 6px;
-          pointer-events: none;
-          position: absolute;
-          top: -1.6em;
-          user-select: none;
           white-space: nowrap;
+          pointer-events: none;
+          user-select: none;
         }
       `}</style>
     </div>
@@ -895,11 +845,7 @@ function CollaborativePageEditor({
 function CollaborativePageRoom(props: CollaborativePageEditorProps) {
   const roomId = `gdd_${props.projectId}_${props.pageId}`;
   return (
-    <RoomProvider
-      id={roomId}
-      initialPresence={{}}
-      initialStorage={{ initialized: false }}
-    >
+    <RoomProvider id={roomId} initialPresence={{}}>
       <CollaborativePageEditor {...props} />
     </RoomProvider>
   );
@@ -1019,7 +965,6 @@ export default function GDDEditor({ projectId, onImageRefClick }: {
       pages={pages}
       activeId={activeId}
       initialHtml={pages.find(p => p.id === activeId)?.content ?? ""}
-      hasDbLoaded={hasDbLoaded}
       dropdownOpen={dropdownOpen}
       setDropdownOpen={setDropdownOpen}
       renamingId={renamingId}

@@ -5,6 +5,7 @@ import {
   Loader2, X, UserPlus, Crown, User, Shield, Link,
   RefreshCw, Copy, Check, Briefcase, Plus, ChevronDown,
 } from "lucide-react";
+import { RoomProvider, useBroadcastEvent, useEventListener } from "@/lib/liveblocks-canvas";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -161,9 +162,22 @@ function RoleBadge({ role }: { role: Role }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Outer shell: mounts the Liveblocks room ───────────────────────────────────
 
 export default function TeamCanvas({ projectId }: { projectId: string }) {
+  return (
+    <RoomProvider
+      id={`team_${projectId}`}
+      initialStorage={{ canvasJson: "" }}
+    >
+      <TeamCanvasInner key={projectId} projectId={projectId} />
+    </RoomProvider>
+  );
+}
+
+// ── Inner component: broadcasts after mutations; re-fetches on remote changes ──
+
+function TeamCanvasInner({ projectId }: { projectId: string }) {
   const [data, setData] = useState<TeamData | null>(null);
   const [roles, setRoles] = useState<ProjectRole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,6 +206,28 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
   const [assigningRoleId, setAssigningRoleId] = useState<string | null>(null);
   const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
   const customInputRef = useRef<HTMLInputElement>(null);
+
+  const broadcast = useBroadcastEvent();
+
+  // Re-fetch all team data (called when another client broadcasts a change)
+  async function refreshTeamData() {
+    try {
+      const [teamData, linkData, rolesData] = await Promise.all([
+        fetch(`/api/projects/${projectId}/members`).then((r) => r.ok ? r.json() : null),
+        fetch(`/api/projects/${projectId}/invite-link`).then((r) => r.ok ? r.json() : { token: null }),
+        fetch(`/api/projects/${projectId}/roles`).then((r) => r.ok ? r.json() : { roles: [] }),
+      ]);
+      if (teamData) setData(teamData);
+      setInviteToken(linkData.token ?? null);
+      setRoles(rolesData.roles ?? []);
+    } catch {
+      // silently fail — local state is still valid
+    }
+  }
+
+  useEventListener(({ event }) => {
+    if (event.type === "refresh") refreshTeamData();
+  });
 
   useEffect(() => {
     setLoading(true);
@@ -223,7 +259,10 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
     try {
       const res = await fetch(`/api/projects/${projectId}/invite-link`, { method: "POST" });
       const json = await res.json();
-      if (json.token) setInviteToken(json.token);
+      if (json.token) {
+        setInviteToken(json.token);
+        broadcast({ type: "refresh" });
+      }
     } finally {
       setLinkGenerating(false);
     }
@@ -234,6 +273,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
     try {
       await fetch(`/api/projects/${projectId}/invite-link`, { method: "DELETE" });
       setInviteToken(null);
+      broadcast({ type: "refresh" });
     } finally {
       setLinkRevoking(false);
     }
@@ -279,11 +319,13 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             : prev
         );
         setInviteInput("");
+        broadcast({ type: "refresh" });
       } else {
         setInviteSuccess(`${email} has been added to the project.`);
         setInviteInput("");
         const refreshed = await fetch(`/api/projects/${projectId}/members`).then((r) => r.json());
         setData(refreshed);
+        broadcast({ type: "refresh" });
       }
     } catch {
       setInviteError("Failed to send invitation. Please try again.");
@@ -298,6 +340,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
       setData((prev) =>
         prev ? { ...prev, members: prev.members.filter((m) => m.id !== userId) } : prev
       );
+      broadcast({ type: "refresh" });
     } catch {
       // silently fail
     }
@@ -311,6 +354,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
           ? { ...prev, invitations: prev.invitations.filter((i) => i.id !== invitationId) }
           : prev
       );
+      broadcast({ type: "refresh" });
     } catch {
       // silently fail
     }
@@ -330,6 +374,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
             ? { ...prev, members: prev.members.map((m) => (m.id === userId ? { ...m, role } : m)) }
             : prev
         );
+        broadcast({ type: "refresh" });
       }
     } finally {
       setChangingRole((prev) => ({ ...prev, [userId]: false }));
@@ -364,6 +409,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
         setNewRolePreset(PRESET_ROLES[0]);
         setNewRoleCustom("");
         setNewRoleUserId("");
+        broadcast({ type: "refresh" });
       }
     } finally {
       setSavingRole(false);
@@ -381,6 +427,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
       if (res.ok) {
         const updated: ProjectRole = await res.json();
         setRoles((prev) => prev.map((r) => (r.id === roleId ? updated : r)));
+        broadcast({ type: "refresh" });
       }
     } finally {
       setAssigningRoleId(null);
@@ -392,6 +439,7 @@ export default function TeamCanvas({ projectId }: { projectId: string }) {
     try {
       await fetch(`/api/projects/${projectId}/roles/${roleId}`, { method: "DELETE" });
       setRoles((prev) => prev.filter((r) => r.id !== roleId));
+      broadcast({ type: "refresh" });
     } finally {
       setDeletingRoleId(null);
     }

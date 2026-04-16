@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { BookOpen, X } from "lucide-react";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
+import { RoomProvider, useStorage, useMutation } from "@/lib/liveblocks-canvas";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -124,36 +125,60 @@ function defaultData(): ScriptData {
   };
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Outer shell: loads from DB then mounts the Liveblocks room ────────────────
 
 export default function ScriptEditor({ projectId }: { projectId: string }) {
   const STORAGE_KEY = `gameref_script_${projectId}_v1`;
-  const [script, setScript]       = useState<ScriptData | null>(null);
+  const [initialJson, setInitialJson] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      // 1. Try DB (authoritative source)
+      const dbData = await loadCanvasData(projectId, "script");
+      if (dbData) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(dbData)); } catch {}
+        setInitialJson(JSON.stringify(dbData));
+        return;
+      }
+      // 2. Fall back to localStorage and migrate to DB
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const parsed = raw ? (JSON.parse(raw) as ScriptData) : null;
+        const initial = parsed ?? defaultData();
+        setInitialJson(JSON.stringify(initial));
+        if (parsed) syncCanvasData(projectId, "script", parsed);
+      } catch {
+        setInitialJson(JSON.stringify(defaultData()));
+      }
+    })();
+  }, [projectId]);
+
+  if (!initialJson) return null;
+
+  return (
+    <RoomProvider
+      id={`script_${projectId}`}
+      initialStorage={{ canvasJson: initialJson }}
+    >
+      <ScriptEditorInner key={projectId} projectId={projectId} />
+    </RoomProvider>
+  );
+}
+
+// ── Inner editor: reads/writes Liveblocks storage for real-time sync ──────────
+
+function ScriptEditorInner({ projectId }: { projectId: string }) {
+  const STORAGE_KEY = `gameref_script_${projectId}_v1`;
+
+  const canvasJson = useStorage((root) => root.canvasJson);
+  const setCanvasJson = useMutation(({ storage }, newJson: string) => {
+    storage.set("canvasJson", newJson);
+  }, []);
+
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(true);
   const pendingFocusRef = useRef<string | null>(null);
   const taRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
-
-  useEffect(() => {
-    (async () => {
-      // 1. Try DB
-      const dbData = await loadCanvasData(projectId, "script");
-      if (dbData) {
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(dbData)); } catch {}
-        setScript(dbData as ScriptData);
-        return;
-      }
-      // 2. Fall back to localStorage and migrate
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        const parsed = raw ? (JSON.parse(raw) as ScriptData) : null;
-        setScript(parsed ?? defaultData());
-        if (parsed) syncCanvasData(projectId, "script", parsed);
-      } catch {
-        setScript(defaultData());
-      }
-    })();
-  }, []);
 
   useEffect(() => {
     if (pendingFocusRef.current) {
@@ -165,18 +190,17 @@ export default function ScriptEditor({ projectId }: { projectId: string }) {
     }
   });
 
-  function save(data: ScriptData) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    syncCanvasData(projectId, "script", data);
-  }
+  // Wait for Liveblocks storage to hydrate
+  if (!canvasJson) return null;
+
+  const script = JSON.parse(canvasJson) as ScriptData;
 
   function updateScript(fn: (prev: ScriptData) => ScriptData) {
-    setScript((prev) => {
-      if (!prev) return prev;
-      const next = fn(prev);
-      save(next);
-      return next;
-    });
+    const next = fn(script);
+    const nextJson = JSON.stringify(next);
+    try { localStorage.setItem(STORAGE_KEY, nextJson); } catch {}
+    syncCanvasData(projectId, "script", next);
+    setCanvasJson(nextJson);
   }
 
   function updateBlock(id: string, text: string) {
@@ -207,7 +231,7 @@ export default function ScriptEditor({ projectId }: { projectId: string }) {
   }
 
   function deleteBlock(id: string) {
-    if (!script || script.blocks.length <= 1) return;
+    if (script.blocks.length <= 1) return;
     const idx = script.blocks.findIndex((b) => b.id === id);
     const prevId = script.blocks[Math.max(0, idx - 1)]?.id;
     updateScript((prev) => ({
@@ -219,8 +243,6 @@ export default function ScriptEditor({ projectId }: { projectId: string }) {
       setFocusedId(prevId);
     }
   }
-
-  if (!script) return null;
 
   const focusedBlock = script.blocks.find((b) => b.id === focusedId) ?? null;
 

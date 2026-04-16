@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus } from "lucide-react";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
+import { RoomProvider, useStorage, useMutation } from "@/lib/liveblocks-canvas";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -35,46 +36,70 @@ function makeId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+function normalize(parsed: unknown): GameObject[] {
+  return (parsed as GameObject[]).map((o) => ({
+    ...o,
+    variables: (o.variables ?? []).map((v: Variable) => ({ ...v, descriptions: v.descriptions ?? [] })),
+    methods: (o.methods ?? []).map((m: Method) => ({ ...m, descriptions: m.descriptions ?? [] })),
+  }));
+}
+
+// ── Outer shell: loads from DB then mounts the Liveblocks room ────────────────
 
 export default function CodeLayout({ projectId }: { projectId: string }) {
   const STORAGE_KEY = `gameref_codelayout_${projectId}_v1`;
-  const [objects, setObjects] = useState<GameObject[] | null>(null);
-  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [initialJson, setInitialJson] = useState<string | null>(null);
 
   useEffect(() => {
-    const normalize = (parsed: unknown) =>
-      (parsed as GameObject[]).map((o) => ({
-        ...o,
-        variables: (o.variables ?? []).map((v: Variable) => ({ ...v, descriptions: v.descriptions ?? [] })),
-        methods: (o.methods ?? []).map((m: Method) => ({ ...m, descriptions: m.descriptions ?? [] })),
-      }));
-
     (async () => {
-      // 1. Try DB
+      // 1. Try DB (authoritative source)
       const dbData = await loadCanvasData(projectId, "codelayout");
       if (dbData) {
         const normalized = normalize(dbData);
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized)); } catch {}
-        setObjects(normalized);
+        setInitialJson(JSON.stringify(normalized));
         return;
       }
-      // 2. Fall back to localStorage and migrate
+      // 2. Fall back to localStorage and migrate to DB
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           const normalized = normalize(JSON.parse(raw));
-          setObjects(normalized);
+          setInitialJson(JSON.stringify(normalized));
           syncCanvasData(projectId, "codelayout", normalized);
         } else {
-          setObjects([]);
+          setInitialJson(JSON.stringify([]));
         }
       } catch {
-        setObjects([]);
+        setInitialJson(JSON.stringify([]));
       }
     })();
+  }, [projectId]);
+
+  if (!initialJson) return null;
+
+  return (
+    <RoomProvider
+      id={`codelayout_${projectId}`}
+      initialStorage={{ canvasJson: initialJson }}
+    >
+      <CodeLayoutInner key={projectId} projectId={projectId} />
+    </RoomProvider>
+  );
+}
+
+// ── Inner editor: reads/writes Liveblocks storage for real-time sync ──────────
+
+function CodeLayoutInner({ projectId }: { projectId: string }) {
+  const STORAGE_KEY = `gameref_codelayout_${projectId}_v1`;
+
+  const canvasJson = useStorage((root) => root.canvasJson);
+  const setCanvasJson = useMutation(({ storage }, newJson: string) => {
+    storage.set("canvasJson", newJson);
   }, []);
+
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
     if (pendingFocusId && inputRefs.current[pendingFocusId]) {
@@ -83,17 +108,17 @@ export default function CodeLayout({ projectId }: { projectId: string }) {
     }
   });
 
-  function save(next: GameObject[]) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    syncCanvasData(projectId, "codelayout", next);
-  }
+  // Wait for Liveblocks storage to hydrate
+  if (!canvasJson) return null;
+
+  const objects = JSON.parse(canvasJson) as GameObject[];
 
   function update(fn: (prev: GameObject[]) => GameObject[]) {
-    setObjects((prev) => {
-      const next = fn(prev ?? []);
-      save(next);
-      return next;
-    });
+    const next = fn(objects);
+    const nextJson = JSON.stringify(next);
+    try { localStorage.setItem(STORAGE_KEY, nextJson); } catch {}
+    syncCanvasData(projectId, "codelayout", next);
+    setCanvasJson(nextJson);
   }
 
   // ── Game object CRUD ────────────────────────────────────────────────────────
@@ -298,8 +323,6 @@ export default function CodeLayout({ projectId }: { projectId: string }) {
       };
     }));
   }
-
-  if (objects === null) return null;
 
   return (
     <main className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-900">

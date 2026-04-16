@@ -18,12 +18,16 @@ export async function POST(req: NextRequest) {
 
   const { room } = await req.json();
 
-  // Room IDs are formatted: gdd_{projectId}_{pageId}
-  // projectId is a cuid2 (no underscores); pageId is "home" or a UUID.
-  const match = (room as string).match(/^gdd_([^_]+)_.+$/);
-  if (!match) return new Response("Invalid room", { status: 400 });
-
-  const projectId = match[1];
+  // Room ID formats:
+  //   gdd_{projectId}_{pageId}      — GDD collaborative editor
+  //   progress_{projectId}          — Progress board (kanban)
+  // projectId is a cuid (no underscores).
+  let projectId: string | null = null;
+  const gddMatch = (room as string).match(/^gdd_([^_]+)_.+$/);
+  const progressMatch = (room as string).match(/^progress_([^_]+)$/);
+  if (gddMatch) projectId = gddMatch[1];
+  else if (progressMatch) projectId = progressMatch[1];
+  else return new Response("Invalid room", { status: 400 });
 
   const member = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId, userId: session.user.id } },

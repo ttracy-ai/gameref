@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Plus, X, ExternalLink, Images } from "lucide-react";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
+import { RoomProvider, useStorage, useMutation } from "@/lib/liveblocks-kanban";
 
 
 const CARD_COLORS = [
@@ -83,18 +84,11 @@ function defaultState(): BoardState {
   };
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Outer shell: loads from DB then mounts the Liveblocks room ───────────────
 
 export default function ProgressBoard({ projectId, onImageRefClick }: { projectId: string; onImageRefClick?: (imageId: string) => void }) {
   const STORAGE_KEY = `gameref_progress_${projectId}_v1`;
-  const REFBOARD_KEY = `gameref_refboard_${projectId}_v1`;
-  const [board, setBoard] = useState<BoardState | null>(null);
-  const [editingCard, setEditingCard] = useState<{ colId: string; card: Card } | null>(null);
-  const [addingTo, setAddingTo] = useState<string | null>(null);
-  const [newCardTitle, setNewCardTitle] = useState("");
-  const [refImages, setRefImages] = useState<RefBoardImage[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [initialBoardJson, setInitialBoardJson] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -104,7 +98,7 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
         const parsed = dbData as BoardState;
         if (!parsed.colorLabels) parsed.colorLabels = DEFAULT_COLOR_LABELS;
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed)); } catch {}
-        setBoard(parsed);
+        setInitialBoardJson(JSON.stringify(parsed));
         return;
       }
       // 2. Fall back to localStorage and migrate to DB
@@ -113,16 +107,50 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
         if (raw) {
           const parsed = JSON.parse(raw) as BoardState;
           if (!parsed.colorLabels) parsed.colorLabels = DEFAULT_COLOR_LABELS;
-          setBoard(parsed);
+          setInitialBoardJson(JSON.stringify(parsed));
           syncCanvasData(projectId, "progress", parsed);
         } else {
-          setBoard(defaultState());
+          setInitialBoardJson(JSON.stringify(defaultState()));
         }
       } catch {
-        setBoard(defaultState());
+        setInitialBoardJson(JSON.stringify(defaultState()));
       }
     })();
+  }, [projectId]);
+
+  if (!initialBoardJson) return null;
+
+  return (
+    <RoomProvider
+      id={`progress_${projectId}`}
+      initialStorage={{ boardJson: initialBoardJson }}
+    >
+      <ProgressBoardInner
+        key={projectId}
+        projectId={projectId}
+        onImageRefClick={onImageRefClick}
+      />
+    </RoomProvider>
+  );
+}
+
+// ─── Inner board: reads/writes Liveblocks storage for real-time sync ──────────
+
+function ProgressBoardInner({ projectId, onImageRefClick }: { projectId: string; onImageRefClick?: (imageId: string) => void }) {
+  const STORAGE_KEY = `gameref_progress_${projectId}_v1`;
+  const REFBOARD_KEY = `gameref_refboard_${projectId}_v1`;
+
+  const boardJson = useStorage((root) => root.boardJson);
+  const setBoardJson = useMutation(({ storage }, newJson: string) => {
+    storage.set("boardJson", newJson);
   }, []);
+
+  const [editingCard, setEditingCard] = useState<{ colId: string; card: Card } | null>(null);
+  const [addingTo, setAddingTo] = useState<string | null>(null);
+  const [newCardTitle, setNewCardTitle] = useState("");
+  const [refImages, setRefImages] = useState<RefBoardImage[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -142,14 +170,17 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
       .catch(() => {});
   }, [projectId]);
 
+  // Wait for Liveblocks storage to hydrate
+  if (!boardJson) return null;
+
+  const board = JSON.parse(boardJson) as BoardState;
+
   function update(fn: (prev: BoardState) => BoardState) {
-    setBoard((prev) => {
-      if (!prev) return prev;
-      const next = fn(prev);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      syncCanvasData(projectId, "progress", next);
-      return next;
-    });
+    const next = fn(board);
+    const nextJson = JSON.stringify(next);
+    try { localStorage.setItem(STORAGE_KEY, nextJson); } catch {}
+    syncCanvasData(projectId, "progress", next);
+    setBoardJson(nextJson);
   }
 
   function onDragEnd(result: DropResult) {
@@ -226,8 +257,6 @@ export default function ProgressBoard({ projectId, onImageRefClick }: { projectI
       return { ...prev, colorLabels };
     });
   }
-
-  if (!board) return null;
 
   return (
     <main className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-900">

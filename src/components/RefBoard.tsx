@@ -181,6 +181,8 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
 function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardProps) {
   const STORAGE_KEY = `gameref_refboard_${projectId}_v1`;
 
+  // ── All hooks must be declared unconditionally before any early return ────
+
   const canvasJson    = useStorage((root) => root.canvasJson);
   const setCanvasJson = useMutation(({ storage }, json: string) => {
     storage.set("canvasJson", json);
@@ -195,33 +197,42 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
   const [noteMode, setNoteMode]         = useState<NoteMode>("overlay");
   const [notesVisible, setNotesVisible] = useState(true);
 
-  const canvasRef       = useRef<HTMLDivElement>(null);
-  const activeOp        = useRef<ActiveOp | null>(null);
-  const imagesRef       = useRef<PlacedImage[]>([]);
-  const selectedIdsRef  = useRef(selectedIds);
-  const focusedIdRef    = useRef<string | null>(null);
-  const focusOrigRef    = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({});
-  const noteDragRef     = useRef<{ startX: number; startY: number; origFx: number; origFy: number; imageId: string; noteId: string } | null>(null);
+  const canvasRef      = useRef<HTMLDivElement>(null);
+  const activeOp       = useRef<ActiveOp | null>(null);
+  const imagesRef      = useRef<PlacedImage[]>([]);
+  const selectedIdsRef = useRef(selectedIds);
+  const focusedIdRef   = useRef<string | null>(null);
+  const focusOrigRef   = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({});
+  const noteDragRef    = useRef<{ startX: number; startY: number; origFx: number; origFy: number; imageId: string; noteId: string } | null>(null);
+
+  // Parse images — empty array before Liveblocks hydrates (canvasJson is null)
+  const images: PlacedImage[] = canvasJson ? JSON.parse(canvasJson) : [];
+  imagesRef.current = images;
 
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
 
-  // Wait for Liveblocks to hydrate
-  if (!canvasJson) return <CanvasLoader />;
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(true); };
+    const up   = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(false); };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, []);
 
-  const images: PlacedImage[] = JSON.parse(canvasJson);
-  imagesRef.current = images;
+  // ── update: write to Liveblocks + DB + localStorage ──────────────────────
 
-  function update(fn: (prev: PlacedImage[]) => PlacedImage[]) {
-    const next = fn(images);
+  const update = useCallback((fn: (prev: PlacedImage[]) => PlacedImage[]) => {
+    const next = fn(imagesRef.current);
     const nextJson = JSON.stringify(next);
     try { localStorage.setItem(STORAGE_KEY, nextJson); } catch {}
     syncCanvasData(projectId, "refboard", next);
     setCanvasJson(nextJson);
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, setCanvasJson]);
 
-  // ── Focus image ─────────────────────────────────────────────────────────────
+  // ── Focus image ───────────────────────────────────────────────────────────
 
-  function focusImageById(id: string) {
+  const focusImageById = useCallback((id: string) => {
     const img = imagesRef.current.find(i => i.id === id);
     if (!img) return;
 
@@ -255,12 +266,10 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
       let w = image.naturalWidth, h = image.naturalHeight;
       const maxW = rect.width * 0.95, maxH = rect.height * 0.95;
       if (w > maxW || h > maxH) { const s = Math.min(maxW / w, maxH / h); w = Math.round(w * s); h = Math.round(h * s); }
-      const x = Math.round((rect.width - w) / 2);
-      const y = Math.round((rect.height - h) / 2);
-      update(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
+      update(prev => prev.map(i => i.id === id ? { ...i, x: Math.round((rect.width - w) / 2), y: Math.round((rect.height - h) / 2), width: w, height: h } : i));
     };
     if (image.complete) zoom(); else image.onload = zoom;
-  }
+  }, [update]);
 
   // Re-zoom focused image when noteMode panel opens/closes
   useEffect(() => {
@@ -277,15 +286,12 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
       const rezoom = () => {
         let w = image.naturalWidth, h = image.naturalHeight;
         if (w > rect.width || h > rect.height) { const s = Math.min(rect.width / w, rect.height / h); w = Math.round(w * s); h = Math.round(h * s); }
-        const x = Math.round((rect.width - w) / 2);
-        const y = Math.round((rect.height - h) / 2);
-        update(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
+        update(prev => prev.map(i => i.id === id ? { ...i, x: Math.round((rect.width - w) / 2), y: Math.round((rect.height - h) / 2), width: w, height: h } : i));
       };
       if (image.complete) rezoom(); else image.onload = rezoom;
     }, 50);
     return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noteMode]);
+  }, [noteMode, update]);
 
   // Trigger focus when navigated here from GDD
   useEffect(() => {
@@ -295,48 +301,30 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
       onFocusConsumed?.();
     }, 80);
     return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingFocusId]);
+  }, [pendingFocusId, focusImageById, onFocusConsumed]);
 
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(true); };
-    const up   = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(false); };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
-  }, []);
+  // ── Upload image to Vercel Blob ───────────────────────────────────────────
 
-  // ── Upload image to Vercel Blob ──────────────────────────────────────────────
-
-  async function uploadAndPlace(file: File, dropX: number, dropY: number, canvasRect: DOMRect) {
+  const uploadAndPlace = useCallback(async (file: File, dropX: number, dropY: number, canvasRect: DOMRect) => {
     setIsUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch(`/api/refboard/upload?projectId=${projectId}`, {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch(`/api/refboard/upload?projectId=${projectId}`, { method: "POST", body: formData });
       if (!res.ok) { console.error("Upload failed:", await res.text()); return; }
       const { url } = await res.json() as { url: string };
-
       const img = new Image();
       img.src = url;
       img.onload = () => {
         const { width, height } = getScaledSize(img.naturalWidth, img.naturalHeight, canvasRect.width, canvasRect.height);
-        update(prev => [...prev, {
-          id: crypto.randomUUID(), src: url,
-          x: Math.max(0, dropX - width / 2),
-          y: Math.max(0, dropY - height / 2),
-          width, height, notes: [],
-        }]);
+        update(prev => [...prev, { id: crypto.randomUUID(), src: url, x: Math.max(0, dropX - width / 2), y: Math.max(0, dropY - height / 2), width, height, notes: [] }]);
       };
     } finally {
       setIsUploading(false);
     }
-  }
+  }, [projectId, update]);
 
-  // ── Drop handler ─────────────────────────────────────────────────────────────
+  // ── Drop handler ──────────────────────────────────────────────────────────
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
@@ -347,16 +335,11 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
     const dropX = e.clientX - rect.left;
     const dropY = e.clientY - rect.top;
 
-    // Prefer dropped files (local file → upload)
     if (e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (file.type.startsWith("image/")) {
-        await uploadAndPlace(file, dropX, dropY, rect);
-        return;
-      }
+      if (file.type.startsWith("image/")) { await uploadAndPlace(file, dropX, dropY, rect); return; }
     }
 
-    // Fall back: dragged image from web (fetch it server-side via URL, or use the URL directly)
     const uriList = e.dataTransfer.getData("text/uri-list");
     const html    = e.dataTransfer.getData("text/html");
     let srcUrl: string | null = null;
@@ -364,22 +347,16 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
     if (!srcUrl && html) { const m = html.match(/src=["']([^"']+)["']/); if (m?.[1]) srcUrl = m[1]; }
     if (!srcUrl) return;
 
-    // Fetch the external URL as a Blob and re-upload so we own the asset
     try {
       setIsUploading(true);
       const fetched = await fetch(srcUrl);
       const blob = await fetched.blob();
       if (!blob.type.startsWith("image/")) return;
       const ext = blob.type.split("/")[1] ?? "png";
-      const file = new File([blob], `dropped.${ext}`, { type: blob.type });
-      await uploadAndPlace(file, dropX, dropY, rect);
-    } catch {
-      console.error("Could not fetch dropped image URL");
-    } finally {
-      setIsUploading(false);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+      await uploadAndPlace(new File([blob], `dropped.${ext}`, { type: blob.type }), dropX, dropY, rect);
+    } catch { console.error("Could not fetch dropped image URL"); }
+    finally { setIsUploading(false); }
+  }, [uploadAndPlace]);
 
   const handleDragOver  = useCallback((e: React.DragEvent) => { e.preventDefault(); if (!activeOp.current) setIsDragOver(true); }, []);
   const handleDragLeave = useCallback(() => setIsDragOver(false), []);
@@ -396,48 +373,28 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
 
   const handleImagePointerDown = useCallback((e: React.PointerEvent, id: string) => {
     e.stopPropagation();
-
     if (e.ctrlKey) {
       setSelectedIds(new Set());
       if (focusedIdRef.current === id) {
         const orig = focusOrigRef.current[id];
-        if (orig) {
-          update(prev => prev.map(i => i.id === id ? { ...i, ...orig } : i));
-          delete focusOrigRef.current[id];
-        }
-        focusedIdRef.current = null;
-        setFocusedId(null);
-        setNoteMode("overlay");
-      } else {
-        focusImageById(id);
-      }
+        if (orig) { update(prev => prev.map(i => i.id === id ? { ...i, ...orig } : i)); delete focusOrigRef.current[id]; }
+        focusedIdRef.current = null; setFocusedId(null); setNoteMode("overlay");
+      } else { focusImageById(id); }
       return;
     }
-
     if (e.shiftKey) {
       setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
       return;
     }
-
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const current = selectedIdsRef.current;
     const idsToMove = current.has(id) ? [...current] : [id];
     if (!current.has(id)) setSelectedIds(new Set([id]));
-
-    update(prev => {
-      const moving = prev.filter(i => idsToMove.includes(i.id));
-      const rest   = prev.filter(i => !idsToMove.includes(i.id));
-      return [...rest, ...moving];
-    });
-
+    update(prev => { const moving = prev.filter(i => idsToMove.includes(i.id)); const rest = prev.filter(i => !idsToMove.includes(i.id)); return [...rest, ...moving]; });
     const origPositions: Record<string, { x: number; y: number }> = {};
-    for (const imgId of idsToMove) {
-      const img = imagesRef.current.find(i => i.id === imgId);
-      if (img) origPositions[imgId] = { x: img.x, y: img.y };
-    }
+    for (const imgId of idsToMove) { const img = imagesRef.current.find(i => i.id === imgId); if (img) origPositions[imgId] = { x: img.x, y: img.y }; }
     activeOp.current = { kind: "move", startX: e.clientX, startY: e.clientY, origPositions };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [update, focusImageById]);
 
   const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
     e.stopPropagation();
@@ -450,26 +407,23 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
     activeOp.current = { kind: "resize", startX: e.clientX, groupLeft: bounds.x, groupTop: bounds.y, groupOrigWidth: bounds.width, origSizes };
   }, []);
 
-  // ── Notes ────────────────────────────────────────────────────────────────
+  // ── Notes ─────────────────────────────────────────────────────────────────
 
   const addNote = useCallback((imageId: string) => {
     update(prev => prev.map(img => {
       if (img.id !== imageId) return img;
       const colorIdx = img.notes.length % NOTE_PALETTE.length;
-      return { ...img, notes: [...img.notes, { id: crypto.randomUUID(), text: "", fx: 0.1 + (img.notes.length * 0.04), fy: 0.1 + (img.notes.length * 0.04), colorIdx }] };
+      return { ...img, notes: [...img.notes, { id: crypto.randomUUID(), text: "", fx: 0.1 + img.notes.length * 0.04, fy: 0.1 + img.notes.length * 0.04, colorIdx }] };
     }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [update]);
 
   const deleteNote = useCallback((imageId: string, noteId: string) => {
     update(prev => prev.map(img => img.id !== imageId ? img : { ...img, notes: img.notes.filter(n => n.id !== noteId) }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [update]);
 
   const handleNoteChange = useCallback((imageId: string, noteId: string, text: string) => {
     update(prev => prev.map(img => img.id !== imageId ? img : { ...img, notes: img.notes.map(n => n.id === noteId ? { ...n, text } : n) }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [update]);
 
   const handleNoteDragStart = useCallback((e: React.PointerEvent, imageId: string, noteId: string) => {
     e.stopPropagation();
@@ -486,69 +440,45 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
     if (!op || op.imageId !== imageId || op.noteId !== noteId) return;
     const img = imagesRef.current.find(i => i.id === imageId);
     if (!img) return;
-    const newFx = Math.max(0, Math.min(0.95, op.origFx + (e.clientX - op.startX) / img.width));
-    const newFy = Math.max(0, Math.min(0.95, op.origFy + (e.clientY - op.startY) / img.height));
-    update(prev => prev.map(i => i.id !== imageId ? i : { ...i, notes: i.notes.map(n => n.id !== noteId ? n : { ...n, fx: newFx, fy: newFy }) }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    update(prev => prev.map(i => i.id !== imageId ? i : { ...i, notes: i.notes.map(n => n.id !== noteId ? n : { ...n, fx: Math.max(0, Math.min(0.95, op.origFx + (e.clientX - op.startX) / img.width)), fy: Math.max(0, Math.min(0.95, op.origFy + (e.clientY - op.startY) / img.height)) }) }));
+  }, [update]);
 
-  const handleNoteDragEnd = useCallback((e: React.PointerEvent) => {
-    e.stopPropagation();
-    noteDragRef.current = null;
-  }, []);
+  const handleNoteDragEnd = useCallback((e: React.PointerEvent) => { e.stopPropagation(); noteDragRef.current = null; }, []);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const op = activeOp.current;
     if (!op) return;
-
     if (op.kind === "box") {
       const rect = canvasRef.current!.getBoundingClientRect();
       setBoxState({ startX: op.startX, startY: op.startY, currentX: e.clientX - rect.left, currentY: e.clientY - rect.top });
       return;
     }
-
     if (op.kind === "move") {
       const dx = e.clientX - op.startX, dy = e.clientY - op.startY;
-      update(prev => prev.map(img => {
-        const orig = op.origPositions[img.id];
-        return orig ? { ...img, x: orig.x + dx, y: orig.y + dy } : img;
-      }));
+      update(prev => prev.map(img => { const orig = op.origPositions[img.id]; return orig ? { ...img, x: orig.x + dx, y: orig.y + dy } : img; }));
       return;
     }
-
     if (op.kind === "resize") {
-      const dx = e.clientX - op.startX;
-      const scale = Math.max(0.05, (op.groupOrigWidth + dx) / op.groupOrigWidth);
-      update(prev => prev.map(img => {
-        const orig = op.origSizes[img.id];
-        if (!orig) return img;
-        return {
-          ...img,
-          x: Math.round(op.groupLeft + (orig.x - op.groupLeft) * scale),
-          y: Math.round(op.groupTop  + (orig.y - op.groupTop)  * scale),
-          width:  Math.max(10, Math.round(orig.width  * scale)),
-          height: Math.max(10, Math.round(orig.height * scale)),
-        };
-      }));
+      const scale = Math.max(0.05, (op.groupOrigWidth + (e.clientX - op.startX)) / op.groupOrigWidth);
+      update(prev => prev.map(img => { const orig = op.origSizes[img.id]; if (!orig) return img; return { ...img, x: Math.round(op.groupLeft + (orig.x - op.groupLeft) * scale), y: Math.round(op.groupTop + (orig.y - op.groupTop) * scale), width: Math.max(10, Math.round(orig.width * scale)), height: Math.max(10, Math.round(orig.height * scale)) }; }));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [update]);
 
   const handlePointerUp = useCallback(() => {
     const op = activeOp.current;
     activeOp.current = null;
     if (op?.kind === "box") {
-      const bs = boxState;
-      setBoxState(null);
+      const bs = boxState; setBoxState(null);
       if (!bs) return;
       const box = normalizeBox(bs);
       if (box.w < 4 && box.h < 4) return;
       const hits = imagesRef.current.filter(img => boxIntersects(img, box));
       if (hits.length > 0) setSelectedIds(new Set(hits.map(i => i.id)));
-    } else {
-      setBoxState(null);
-    }
+    } else { setBoxState(null); }
   }, [boxState]);
+
+  // ── Early return after all hooks ──────────────────────────────────────────
+  if (!canvasJson) return <CanvasLoader />;
 
   // ── Render ────────────────────────────────────────────────────────────────
 

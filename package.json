@@ -30,6 +30,7 @@
     "@tiptap/starter-kit": "^3.22.3",
     "@tiptap/suggestion": "^3.22.3",
     "@tiptap/y-tiptap": "^3.0.3",
+    "@vercel/blob": "^2.3.3",
     "dotenv": "^17.4.2",
     "jose": "^5.9.6",
     "lucide-react": "^1.7.0",

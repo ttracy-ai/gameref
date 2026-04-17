@@ -3,9 +3,11 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { PanelRight, StickyNote, Plus, Eye, EyeOff, X } from "lucide-react";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
+import { RoomProvider, useStorage, useMutation } from "@/lib/liveblocks-canvas";
+import CanvasLoader from "@/components/CanvasLoader";
 
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 const NOTE_PALETTE = [
   { strip: "#f59e0b", body: "#fef08a" }, // amber
@@ -19,14 +21,14 @@ const NOTE_PALETTE = [
 type ImageNote = {
   id: string;
   text: string;
-  fx: number; // position as fraction of image width
-  fy: number; // position as fraction of image height
-  colorIdx: number; // index into NOTE_PALETTE
+  fx: number;
+  fy: number;
+  colorIdx: number;
 };
 
 type PlacedImage = {
   id: string;
-  src: string;
+  src: string; // Vercel Blob URL (or legacy base64 for old data)
   x: number;
   y: number;
   width: number;
@@ -50,22 +52,13 @@ type ResizeOp = {
   origSizes: Record<string, { x: number; y: number; width: number; height: number }>;
 };
 
-type BoxOp = {
-  kind: "box";
-  startX: number;
-  startY: number;
-};
-
+type BoxOp  = { kind: "box"; startX: number; startY: number };
 type ActiveOp = MoveOp | ResizeOp | BoxOp;
 
-type BoxState = {
-  startX: number; startY: number;
-  currentX: number; currentY: number;
-} | null;
-
+type BoxState = { startX: number; startY: number; currentX: number; currentY: number } | null;
 type NoteMode = "overlay" | "panel";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getScaledSize(nW: number, nH: number, cW: number, cH: number) {
   const maxW = cW * 0.45, maxH = cH * 0.45, minDim = 180;
@@ -73,35 +66,6 @@ function getScaledSize(nW: number, nH: number, cW: number, cH: number) {
   if (w > maxW || h > maxH) { const s = Math.min(maxW / w, maxH / h); w *= s; h *= s; }
   if (Math.max(w, h) < minDim) { const s = minDim / Math.max(w, h); w *= s; h *= s; }
   return { width: Math.round(w), height: Math.round(h) };
-}
-
-async function blobToDataUrl(blobUrl: string): Promise<string> {
-  const res = await fetch(blobUrl);
-  const blob = await res.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function extractImageSrc(dt: DataTransfer): Promise<string | null> {
-  if (dt.files.length > 0) {
-    const file = dt.files[0];
-    if (file.type.startsWith("image/")) return URL.createObjectURL(file);
-  }
-  const uriList = dt.getData("text/uri-list");
-  if (uriList) {
-    const first = uriList.split("\n").map(u => u.trim()).find(u => u && !u.startsWith("#"));
-    if (first) return first;
-  }
-  const html = dt.getData("text/html");
-  if (html) {
-    const match = html.match(/src=["']([^"']+)["']/);
-    if (match?.[1]) return match[1];
-  }
-  return null;
 }
 
 function normalizeBox(b: NonNullable<BoxState>) {
@@ -118,98 +82,50 @@ function boxIntersects(img: PlacedImage, box: { x: number; y: number; w: number;
 
 function groupBoundsOf(imgs: PlacedImage[]) {
   if (imgs.length === 0) return null;
-  const x = Math.min(...imgs.map(i => i.x));
-  const y = Math.min(...imgs.map(i => i.y));
-  const right = Math.max(...imgs.map(i => i.x + i.width));
-  const bottom = Math.max(...imgs.map(i => i.y + i.height));
-  return { x, y, width: right - x, height: bottom - y };
+  return {
+    x: Math.min(...imgs.map(i => i.x)),
+    y: Math.min(...imgs.map(i => i.y)),
+    width:  Math.max(...imgs.map(i => i.x + i.width))  - Math.min(...imgs.map(i => i.x)),
+    height: Math.max(...imgs.map(i => i.y + i.height)) - Math.min(...imgs.map(i => i.y)),
+  };
 }
 
-function loadFromStorage(storageKey: string): PlacedImage[] {
-  try {
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) return [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return JSON.parse(raw).map((img: any) => {
-      // Migrate from old single-note format
-      if (!Array.isArray(img.notes)) {
-        const notes: ImageNote[] = [];
-        if (img.note) {
-          notes.push({
-            id: crypto.randomUUID(),
-            text: img.note,
-            fx: img.noteFx ?? 0.55,
-            fy: img.noteFy ?? 0.55,
-            colorIdx: 0,
-          });
-        }
-        const { note: _n, noteFx: _fx, noteFy: _fy, ...rest } = img;
-        return { ...rest, notes };
-      }
-      return img;
-    });
-  } catch { return []; }
+function migrateImages(raw: unknown[]): PlacedImage[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return raw.map((img: any) => {
+    if (!Array.isArray(img.notes)) {
+      const notes: ImageNote[] = [];
+      if (img.note) notes.push({ id: crypto.randomUUID(), text: img.note, fx: img.noteFx ?? 0.55, fy: img.noteFy ?? 0.55, colorIdx: 0 });
+      const { note: _n, noteFx: _fx, noteFy: _fy, ...rest } = img;
+      return { ...rest, notes };
+    }
+    return img as PlacedImage;
+  });
 }
 
-function saveToStorage(storageKey: string, images: PlacedImage[]) {
-  try { localStorage.setItem(storageKey, JSON.stringify(images)); }
-  catch { console.warn("GameRef: localStorage full — some images may not persist."); }
-}
+// ── GrowTextarea ──────────────────────────────────────────────────────────────
 
-// ── GrowTextarea ─────────────────────────────────────────────────────────────
-// Ghost-element technique: an invisible div with identical text drives the
-// height; the textarea is absolutely positioned on top. Pure CSS — no JS
-// height calculations needed.
-
-function GrowTextarea({
-  value,
-  onChange,
-  placeholder,
-  style,
-}: {
+function GrowTextarea({ value, onChange, placeholder, style }: {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   style?: React.CSSProperties;
 }) {
   const shared: React.CSSProperties = {
-    fontFamily: "inherit",
-    fontSize: style?.fontSize ?? 13,
-    lineHeight: style?.lineHeight ?? 1.6,
-    padding: style?.padding ?? "8px 10px",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    width: "100%",
-    boxSizing: "border-box",
+    fontFamily: "inherit", fontSize: style?.fontSize ?? 13,
+    lineHeight: style?.lineHeight ?? 1.6, padding: style?.padding ?? "8px 10px",
+    whiteSpace: "pre-wrap", wordBreak: "break-word", width: "100%", boxSizing: "border-box",
   };
   return (
     <div style={{ position: "relative", minHeight: 64 }}>
-      {/* Ghost div — invisible, drives container height */}
-      <div aria-hidden style={{ ...shared, visibility: "hidden", minHeight: 64 }}>
-        {value + "\u200b" /* zero-width space keeps empty div from collapsing */}
-      </div>
-      {/* Textarea fills the ghost div exactly */}
-      <textarea
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        style={{
-          ...style,
-          ...shared,
-          position: "absolute",
-          inset: 0,
-          height: "100%",
-          resize: "none",
-          overflow: "hidden",
-          border: "none",
-          outline: "none",
-        }}
-      />
+      <div aria-hidden style={{ ...shared, visibility: "hidden", minHeight: 64 }}>{value + "\u200b"}</div>
+      <textarea value={value} onChange={onChange} placeholder={placeholder}
+        style={{ ...style, ...shared, position: "absolute", inset: 0, height: "100%", resize: "none", overflow: "hidden", border: "none", outline: "none" }} />
     </div>
   );
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Outer shell ───────────────────────────────────────────────────────────────
 
 type RefBoardProps = {
   projectId: string;
@@ -219,33 +135,134 @@ type RefBoardProps = {
 
 export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }: RefBoardProps) {
   const STORAGE_KEY = `gameref_refboard_${projectId}_v1`;
-  const [images, setImages] = useState<PlacedImage[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [boxState, setBoxState] = useState<BoxState>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [shiftHeld, setShiftHeld] = useState(false);
-  const [imagesLoaded, setImagesLoaded] = useState(false);
+  const [initialJson, setInitialJson] = useState<string | null>(null);
 
-  const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [noteMode, setNoteMode] = useState<NoteMode>("overlay");
+  useEffect(() => {
+    (async () => {
+      const dbData = await loadCanvasData(projectId, "refboard");
+      if (dbData) {
+        const images = migrateImages(dbData as unknown[]);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(images)); } catch {}
+        setInitialJson(JSON.stringify(images));
+      } else {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const images = migrateImages(JSON.parse(raw));
+            setInitialJson(JSON.stringify(images));
+            syncCanvasData(projectId, "refboard", images);
+          } else {
+            setInitialJson(JSON.stringify([]));
+          }
+        } catch {
+          setInitialJson(JSON.stringify([]));
+        }
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!initialJson) return <CanvasLoader />;
+
+  return (
+    <RoomProvider id={`refboard_${projectId}`} initialStorage={{ canvasJson: initialJson }}>
+      <RefBoardInner
+        key={projectId}
+        projectId={projectId}
+        pendingFocusId={pendingFocusId}
+        onFocusConsumed={onFocusConsumed}
+      />
+    </RoomProvider>
+  );
+}
+
+// ── Inner board ───────────────────────────────────────────────────────────────
+
+function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardProps) {
+  const STORAGE_KEY = `gameref_refboard_${projectId}_v1`;
+
+  const canvasJson    = useStorage((root) => root.canvasJson);
+  const setCanvasJson = useMutation(({ storage }, json: string) => {
+    storage.set("canvasJson", json);
+  }, []);
+
+  const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
+  const [boxState, setBoxState]         = useState<BoxState>(null);
+  const [isDragOver, setIsDragOver]     = useState(false);
+  const [isUploading, setIsUploading]   = useState(false);
+  const [shiftHeld, setShiftHeld]       = useState(false);
+  const [focusedId, setFocusedId]       = useState<string | null>(null);
+  const [noteMode, setNoteMode]         = useState<NoteMode>("overlay");
   const [notesVisible, setNotesVisible] = useState(true);
 
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const activeOp = useRef<ActiveOp | null>(null);
-  const imagesRef = useRef(images);
-  const selectedIdsRef = useRef(selectedIds);
-  const focusedIdRef = useRef<string | null>(null);
-  const focusOrigRef = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({});
-  const noteDragRef = useRef<{
-    startX: number; startY: number;
-    origFx: number; origFy: number;
-    imageId: string; noteId: string;
-  } | null>(null);
+  const canvasRef       = useRef<HTMLDivElement>(null);
+  const activeOp        = useRef<ActiveOp | null>(null);
+  const imagesRef       = useRef<PlacedImage[]>([]);
+  const selectedIdsRef  = useRef(selectedIds);
+  const focusedIdRef    = useRef<string | null>(null);
+  const focusOrigRef    = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({});
+  const noteDragRef     = useRef<{ startX: number; startY: number; origFx: number; origFy: number; imageId: string; noteId: string } | null>(null);
 
-  useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
 
-  // Re-zoom the focused image whenever noteMode changes so it fits the new canvas area
+  // Wait for Liveblocks to hydrate
+  if (!canvasJson) return <CanvasLoader />;
+
+  const images: PlacedImage[] = JSON.parse(canvasJson);
+  imagesRef.current = images;
+
+  function update(fn: (prev: PlacedImage[]) => PlacedImage[]) {
+    const next = fn(images);
+    const nextJson = JSON.stringify(next);
+    try { localStorage.setItem(STORAGE_KEY, nextJson); } catch {}
+    syncCanvasData(projectId, "refboard", next);
+    setCanvasJson(nextJson);
+  }
+
+  // ── Focus image ─────────────────────────────────────────────────────────────
+
+  function focusImageById(id: string) {
+    const img = imagesRef.current.find(i => i.id === id);
+    if (!img) return;
+
+    const currentFocused = focusedIdRef.current;
+    if (currentFocused && currentFocused !== id) {
+      const orig = focusOrigRef.current[currentFocused];
+      if (orig) {
+        update(prev => prev.map(i => i.id === currentFocused ? { ...i, ...orig } : i));
+        delete focusOrigRef.current[currentFocused];
+      }
+      setNoteMode("overlay");
+    }
+
+    focusOrigRef.current[id] = { x: img.x, y: img.y, width: img.width, height: img.height };
+    focusedIdRef.current = id;
+    setFocusedId(id);
+    setSelectedIds(new Set());
+
+    update(prev => {
+      const target = prev.find(i => i.id === id);
+      const rest = prev.filter(i => i.id !== id);
+      return target ? [...rest, target] : prev;
+    });
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const image = new window.Image();
+    image.src = img.src;
+    const zoom = () => {
+      let w = image.naturalWidth, h = image.naturalHeight;
+      const maxW = rect.width * 0.95, maxH = rect.height * 0.95;
+      if (w > maxW || h > maxH) { const s = Math.min(maxW / w, maxH / h); w = Math.round(w * s); h = Math.round(h * s); }
+      const x = Math.round((rect.width - w) / 2);
+      const y = Math.round((rect.height - h) / 2);
+      update(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
+    };
+    if (image.complete) zoom(); else image.onload = zoom;
+  }
+
+  // Re-zoom focused image when noteMode panel opens/closes
   useEffect(() => {
     const id = focusedIdRef.current;
     if (!id) return;
@@ -258,189 +275,134 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
       const image = new window.Image();
       image.src = imgData.src;
       const rezoom = () => {
-        let w = image.naturalWidth;
-        let h = image.naturalHeight;
-        if (w > rect.width || h > rect.height) {
-          const scale = Math.min(rect.width / w, rect.height / h);
-          w = Math.round(w * scale);
-          h = Math.round(h * scale);
-        }
+        let w = image.naturalWidth, h = image.naturalHeight;
+        if (w > rect.width || h > rect.height) { const s = Math.min(rect.width / w, rect.height / h); w = Math.round(w * s); h = Math.round(h * s); }
         const x = Math.round((rect.width - w) / 2);
         const y = Math.round((rect.height - h) / 2);
-        setImages(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
+        update(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
       };
-      if (image.complete) rezoom();
-      else image.onload = rezoom;
+      if (image.complete) rezoom(); else image.onload = rezoom;
     }, 50);
     return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteMode]);
-
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(true); };
-    const up = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(false); };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
-  }, []);
-
-  // ── Persistence ────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    (async () => {
-      // 1. Try DB
-      const dbData = await loadCanvasData(projectId, "refboard");
-      if (dbData) {
-        const apiImages = (dbData as PlacedImage[]).map(img => ({
-          ...img,
-          notes: Array.isArray(img.notes) ? img.notes : [],
-        }));
-        setImages(apiImages);
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(apiImages)); } catch {}
-      } else {
-        // 2. Fall back to localStorage and migrate
-        const local = loadFromStorage(STORAGE_KEY);
-        setImages(local);
-        if (local.length > 0) syncCanvasData(projectId, "refboard", local);
-      }
-      setImagesLoaded(true);
-    })();
-  }, [STORAGE_KEY]);
-
-  useEffect(() => {
-    if (!imagesLoaded) return;
-    const toSave = images.map(img => {
-      const orig = focusOrigRef.current[img.id];
-      return orig ? { ...img, ...orig } : img;
-    });
-    saveToStorage(STORAGE_KEY, toSave);
-    syncCanvasData(projectId, "refboard", toSave);
-  }, [images, STORAGE_KEY, imagesLoaded]);
-
-  // ── Focus image programmatically (used by GDD image refs) ─────────────────
-
-  const focusImageById = useCallback((id: string) => {
-    const img = imagesRef.current.find(i => i.id === id);
-    if (!img) return;
-
-    // Restore any previously focused image
-    const currentFocused = focusedIdRef.current;
-    if (currentFocused && currentFocused !== id) {
-      const orig = focusOrigRef.current[currentFocused];
-      if (orig) {
-        setImages(prev => prev.map(i => i.id === currentFocused ? { ...i, ...orig } : i));
-        delete focusOrigRef.current[currentFocused];
-      }
-      setNoteMode("overlay");
-    }
-
-    focusOrigRef.current[id] = { x: img.x, y: img.y, width: img.width, height: img.height };
-    focusedIdRef.current = id;
-    setFocusedId(id);
-    setSelectedIds(new Set());
-
-    // Bring to front
-    setImages(prev => {
-      const target = prev.find(i => i.id === id);
-      const rest = prev.filter(i => i.id !== id);
-      return target ? [...rest, target] : prev;
-    });
-
-    // Zoom to near-native resolution
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const image = new window.Image();
-    image.src = img.src;
-    const zoom = () => {
-      const maxW = rect.width * 0.95;
-      const maxH = rect.height * 0.95;
-      let w = image.naturalWidth;
-      let h = image.naturalHeight;
-      if (w > maxW || h > maxH) {
-        const scale = Math.min(maxW / w, maxH / h);
-        w = Math.round(w * scale);
-        h = Math.round(h * scale);
-      }
-      const x = Math.round((rect.width - w) / 2);
-      const y = Math.round((rect.height - h) / 2);
-      setImages(prev => prev.map(i => i.id === id ? { ...i, x, y, width: w, height: h } : i));
-    };
-    if (image.complete) zoom(); else image.onload = zoom;
-  }, []);
 
   // Trigger focus when navigated here from GDD
   useEffect(() => {
-    if (!pendingFocusId || !imagesLoaded) return;
+    if (!pendingFocusId) return;
     const t = setTimeout(() => {
       focusImageById(pendingFocusId);
       onFocusConsumed?.();
     }, 80);
     return () => clearTimeout(t);
-  }, [pendingFocusId, imagesLoaded, focusImageById, onFocusConsumed]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFocusId]);
 
-  // ── Drop from Chrome ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(true); };
+    const up   = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(false); };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, []);
+
+  // ── Upload image to Vercel Blob ──────────────────────────────────────────────
+
+  async function uploadAndPlace(file: File, dropX: number, dropY: number, canvasRect: DOMRect) {
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/refboard/upload?projectId=${projectId}`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) { console.error("Upload failed:", await res.text()); return; }
+      const { url } = await res.json() as { url: string };
+
+      const img = new Image();
+      img.src = url;
+      img.onload = () => {
+        const { width, height } = getScaledSize(img.naturalWidth, img.naturalHeight, canvasRect.width, canvasRect.height);
+        update(prev => [...prev, {
+          id: crypto.randomUUID(), src: url,
+          x: Math.max(0, dropX - width / 2),
+          y: Math.max(0, dropY - height / 2),
+          width, height, notes: [],
+        }]);
+      };
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  // ── Drop handler ─────────────────────────────────────────────────────────────
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     const canvas = canvasRef.current;
     if (!canvas) return;
-    let src = await extractImageSrc(e.dataTransfer);
-    if (!src) return;
-    if (src.startsWith("blob:")) {
-      const dataUrl = await blobToDataUrl(src);
-      URL.revokeObjectURL(src);
-      src = dataUrl;
-    }
     const rect = canvas.getBoundingClientRect();
     const dropX = e.clientX - rect.left;
     const dropY = e.clientY - rect.top;
-    const finalSrc = src;
-    const img = new Image();
-    img.src = finalSrc;
-    img.onload = () => {
-      const { width, height } = getScaledSize(img.naturalWidth, img.naturalHeight, rect.width, rect.height);
-      setImages(prev => [...prev, {
-        id: crypto.randomUUID(), src: finalSrc,
-        x: Math.max(0, dropX - width / 2), y: Math.max(0, dropY - height / 2),
-        width, height, notes: [],
-      }]);
-    };
-  }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    if (activeOp.current) return;
-    setIsDragOver(true);
-  }, []);
+    // Prefer dropped files (local file → upload)
+    if (e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type.startsWith("image/")) {
+        await uploadAndPlace(file, dropX, dropY, rect);
+        return;
+      }
+    }
+
+    // Fall back: dragged image from web (fetch it server-side via URL, or use the URL directly)
+    const uriList = e.dataTransfer.getData("text/uri-list");
+    const html    = e.dataTransfer.getData("text/html");
+    let srcUrl: string | null = null;
+    if (uriList) srcUrl = uriList.split("\n").map(u => u.trim()).find(u => u && !u.startsWith("#")) ?? null;
+    if (!srcUrl && html) { const m = html.match(/src=["']([^"']+)["']/); if (m?.[1]) srcUrl = m[1]; }
+    if (!srcUrl) return;
+
+    // Fetch the external URL as a Blob and re-upload so we own the asset
+    try {
+      setIsUploading(true);
+      const fetched = await fetch(srcUrl);
+      const blob = await fetched.blob();
+      if (!blob.type.startsWith("image/")) return;
+      const ext = blob.type.split("/")[1] ?? "png";
+      const file = new File([blob], `dropped.${ext}`, { type: blob.type });
+      await uploadAndPlace(file, dropX, dropY, rect);
+    } catch {
+      console.error("Could not fetch dropped image URL");
+    } finally {
+      setIsUploading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  const handleDragOver  = useCallback((e: React.DragEvent) => { e.preventDefault(); if (!activeOp.current) setIsDragOver(true); }, []);
   const handleDragLeave = useCallback(() => setIsDragOver(false), []);
 
-  // ── Canvas background → start box select ──────────────────────────────────
+  // ── Pointer handlers ──────────────────────────────────────────────────────
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.target !== canvasRef.current) return;
     setSelectedIds(new Set());
     if (!e.shiftKey) return;
     const rect = canvasRef.current!.getBoundingClientRect();
-    activeOp.current = {
-      kind: "box",
-      startX: e.clientX - rect.left,
-      startY: e.clientY - rect.top,
-    };
+    activeOp.current = { kind: "box", startX: e.clientX - rect.left, startY: e.clientY - rect.top };
   }, []);
-
-  // ── Image pointer down ─────────────────────────────────────────────────────
 
   const handleImagePointerDown = useCallback((e: React.PointerEvent, id: string) => {
     e.stopPropagation();
 
     if (e.ctrlKey) {
       setSelectedIds(new Set());
-      // Toggle off if already focused; otherwise focus
       if (focusedIdRef.current === id) {
         const orig = focusOrigRef.current[id];
         if (orig) {
-          setImages(prev => prev.map(i => i.id === id ? { ...i, ...orig } : i));
+          update(prev => prev.map(i => i.id === id ? { ...i, ...orig } : i));
           delete focusOrigRef.current[id];
         }
         focusedIdRef.current = null;
@@ -453,23 +415,18 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
     }
 
     if (e.shiftKey) {
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        next.has(id) ? next.delete(id) : next.add(id);
-        return next;
-      });
+      setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
       return;
     }
 
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-
     const current = selectedIdsRef.current;
     const idsToMove = current.has(id) ? [...current] : [id];
     if (!current.has(id)) setSelectedIds(new Set([id]));
 
-    setImages(prev => {
+    update(prev => {
       const moving = prev.filter(i => idsToMove.includes(i.id));
-      const rest = prev.filter(i => !idsToMove.includes(i.id));
+      const rest   = prev.filter(i => !idsToMove.includes(i.id));
       return [...rest, ...moving];
     });
 
@@ -479,61 +436,39 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
       if (img) origPositions[imgId] = { x: img.x, y: img.y };
     }
     activeOp.current = { kind: "move", startX: e.clientX, startY: e.clientY, origPositions };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ── Group resize handle pointer down ───────────────────────────────────────
 
   const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-
     const selected = imagesRef.current.filter(i => selectedIdsRef.current.has(i.id));
     const bounds = groupBoundsOf(selected);
     if (!bounds) return;
-
     const origSizes: Record<string, { x: number; y: number; width: number; height: number }> = {};
-    for (const img of selected) {
-      origSizes[img.id] = { x: img.x, y: img.y, width: img.width, height: img.height };
-    }
-
-    activeOp.current = {
-      kind: "resize",
-      startX: e.clientX,
-      groupLeft: bounds.x,
-      groupTop: bounds.y,
-      groupOrigWidth: bounds.width,
-      origSizes,
-    };
+    for (const img of selected) origSizes[img.id] = { x: img.x, y: img.y, width: img.width, height: img.height };
+    activeOp.current = { kind: "resize", startX: e.clientX, groupLeft: bounds.x, groupTop: bounds.y, groupOrigWidth: bounds.width, origSizes };
   }, []);
 
-  // ── Notes ─────────────────────────────────────────────────────────────────
+  // ── Notes ────────────────────────────────────────────────────────────────
 
   const addNote = useCallback((imageId: string) => {
-    setImages(prev => prev.map(img => {
+    update(prev => prev.map(img => {
       if (img.id !== imageId) return img;
       const colorIdx = img.notes.length % NOTE_PALETTE.length;
-      const newNote: ImageNote = {
-        id: crypto.randomUUID(),
-        text: "",
-        fx: 0.1 + (img.notes.length * 0.04),
-        fy: 0.1 + (img.notes.length * 0.04),
-        colorIdx,
-      };
-      return { ...img, notes: [...img.notes, newNote] };
+      return { ...img, notes: [...img.notes, { id: crypto.randomUUID(), text: "", fx: 0.1 + (img.notes.length * 0.04), fy: 0.1 + (img.notes.length * 0.04), colorIdx }] };
     }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const deleteNote = useCallback((imageId: string, noteId: string) => {
-    setImages(prev => prev.map(img => img.id !== imageId ? img : {
-      ...img, notes: img.notes.filter(n => n.id !== noteId),
-    }));
+    update(prev => prev.map(img => img.id !== imageId ? img : { ...img, notes: img.notes.filter(n => n.id !== noteId) }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleNoteChange = useCallback((imageId: string, noteId: string, text: string) => {
-    setImages(prev => prev.map(img => img.id !== imageId ? img : {
-      ...img,
-      notes: img.notes.map(n => n.id === noteId ? { ...n, text } : n),
-    }));
+    update(prev => prev.map(img => img.id !== imageId ? img : { ...img, notes: img.notes.map(n => n.id === noteId ? { ...n, text } : n) }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleNoteDragStart = useCallback((e: React.PointerEvent, imageId: string, noteId: string) => {
@@ -542,11 +477,7 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
     const img = imagesRef.current.find(i => i.id === imageId);
     const note = img?.notes.find(n => n.id === noteId);
     if (!note) return;
-    noteDragRef.current = {
-      startX: e.clientX, startY: e.clientY,
-      origFx: note.fx, origFy: note.fy,
-      imageId, noteId,
-    };
+    noteDragRef.current = { startX: e.clientX, startY: e.clientY, origFx: note.fx, origFy: note.fy, imageId, noteId };
   }, []);
 
   const handleNoteDragMove = useCallback((e: React.PointerEvent, imageId: string, noteId: string) => {
@@ -557,10 +488,8 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
     if (!img) return;
     const newFx = Math.max(0, Math.min(0.95, op.origFx + (e.clientX - op.startX) / img.width));
     const newFy = Math.max(0, Math.min(0.95, op.origFy + (e.clientY - op.startY) / img.height));
-    setImages(prev => prev.map(i => i.id !== imageId ? i : {
-      ...i,
-      notes: i.notes.map(n => n.id !== noteId ? n : { ...n, fx: newFx, fy: newFy }),
-    }));
+    update(prev => prev.map(i => i.id !== imageId ? i : { ...i, notes: i.notes.map(n => n.id !== noteId ? n : { ...n, fx: newFx, fy: newFy }) }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleNoteDragEnd = useCallback((e: React.PointerEvent) => {
@@ -568,25 +497,19 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
     noteDragRef.current = null;
   }, []);
 
-  // ── Pointer move ───────────────────────────────────────────────────────────
-
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const op = activeOp.current;
     if (!op) return;
 
     if (op.kind === "box") {
       const rect = canvasRef.current!.getBoundingClientRect();
-      setBoxState({
-        startX: op.startX, startY: op.startY,
-        currentX: e.clientX - rect.left,
-        currentY: e.clientY - rect.top,
-      });
+      setBoxState({ startX: op.startX, startY: op.startY, currentX: e.clientX - rect.left, currentY: e.clientY - rect.top });
       return;
     }
 
     if (op.kind === "move") {
       const dx = e.clientX - op.startX, dy = e.clientY - op.startY;
-      setImages(prev => prev.map(img => {
+      update(prev => prev.map(img => {
         const orig = op.origPositions[img.id];
         return orig ? { ...img, x: orig.x + dx, y: orig.y + dy } : img;
       }));
@@ -596,26 +519,24 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
     if (op.kind === "resize") {
       const dx = e.clientX - op.startX;
       const scale = Math.max(0.05, (op.groupOrigWidth + dx) / op.groupOrigWidth);
-      setImages(prev => prev.map(img => {
+      update(prev => prev.map(img => {
         const orig = op.origSizes[img.id];
         if (!orig) return img;
         return {
           ...img,
           x: Math.round(op.groupLeft + (orig.x - op.groupLeft) * scale),
-          y: Math.round(op.groupTop + (orig.y - op.groupTop) * scale),
-          width: Math.max(10, Math.round(orig.width * scale)),
+          y: Math.round(op.groupTop  + (orig.y - op.groupTop)  * scale),
+          width:  Math.max(10, Math.round(orig.width  * scale)),
           height: Math.max(10, Math.round(orig.height * scale)),
         };
       }));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ── Pointer up ─────────────────────────────────────────────────────────────
 
   const handlePointerUp = useCallback(() => {
     const op = activeOp.current;
     activeOp.current = null;
-
     if (op?.kind === "box") {
       const bs = boxState;
       setBoxState(null);
@@ -632,383 +553,184 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
   // ── Render ────────────────────────────────────────────────────────────────
 
   const selectedImages = images.filter(img => selectedIds.has(img.id));
-  const groupBounds = groupBoundsOf(selectedImages);
-  const normalizedBox = boxState ? normalizeBox(boxState) : null;
+  const groupBounds    = groupBoundsOf(selectedImages);
+  const normalizedBox  = boxState ? normalizeBox(boxState) : null;
   const PAD = 6;
   const focusedImage = focusedId ? images.find(i => i.id === focusedId) ?? null : null;
 
   return (
     <div className="flex flex-1 h-full overflow-hidden">
-    <div
-      ref={canvasRef}
-      className={`relative h-full overflow-hidden transition-colors duration-150 ${
-        isDragOver ? "bg-neutral-800" : "bg-neutral-900"
-      }`}
-      style={{ flex: noteMode === "panel" && focusedId ? "2 1 0%" : "1 1 0%" }}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onPointerDown={handleCanvasPointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onContextMenu={e => e.preventDefault()}
-    >
-      {/* Empty state */}
-      {images.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-neutral-600 select-none pointer-events-none text-sm">
-          Drag images from Chrome to place them
-        </div>
-      )}
+      <div
+        ref={canvasRef}
+        className={`relative h-full overflow-hidden transition-colors duration-150 ${isDragOver ? "bg-neutral-800" : "bg-neutral-900"}`}
+        style={{ flex: noteMode === "panel" && focusedId ? "2 1 0%" : "1 1 0%" }}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onPointerDown={handleCanvasPointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onContextMenu={e => e.preventDefault()}
+      >
+        {/* Empty state */}
+        {images.length === 0 && !isUploading && (
+          <div className="absolute inset-0 flex items-center justify-center text-neutral-600 select-none pointer-events-none text-sm">
+            Drag images from your computer or browser to place them
+          </div>
+        )}
 
-      {/* File drop overlay */}
-      {isDragOver && (
-        <div className="absolute inset-0 border-2 border-dashed border-indigo-500 rounded pointer-events-none z-50 flex items-center justify-center">
-          <span className="text-indigo-400 text-sm select-none">Drop to place</span>
-        </div>
-      )}
+        {/* Upload progress overlay */}
+        {isUploading && (
+          <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+            <div style={{ background: "rgba(20,20,20,0.85)", borderRadius: 8, padding: "10px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+              <svg width="18" height="18" viewBox="0 0 32 32" fill="none" style={{ animation: "canvas-spin 0.9s linear infinite", flexShrink: 0 }}>
+                <circle cx="16" cy="16" r="13" stroke="#2a2a2a" strokeWidth="3" />
+                <path d="M16 3 A13 13 0 0 1 29 16" stroke="#525252" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+              <span style={{ fontSize: 13, color: "#a3a3a3" }}>Uploading…</span>
+            </div>
+            <style>{`@keyframes canvas-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
 
-      {/* Rubber-band selection box */}
-      {normalizedBox && normalizedBox.w > 2 && (
-        <div
-          className="pointer-events-none absolute border border-green-400 bg-green-400/10 z-50"
-          style={{ left: normalizedBox.x, top: normalizedBox.y, width: normalizedBox.w, height: normalizedBox.h }}
-        />
-      )}
+        {/* Drop overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 border-2 border-dashed border-indigo-500 rounded pointer-events-none z-50 flex items-center justify-center">
+            <span className="text-indigo-400 text-sm select-none">Drop to upload</span>
+          </div>
+        )}
 
-      {/* Images */}
-      {images.map(img => {
-        const isFocused = focusedId === img.id;
-        return (
-          <div
-            key={img.id}
-            onPointerDown={e => handleImagePointerDown(e, img.id)}
-            style={{
-              position: "absolute",
-              left: img.x, top: img.y,
-              width: img.width, height: img.height,
-              cursor: "grab",
-              touchAction: "none",
-              userSelect: "none",
-            }}
-          >
-            <img
-              src={img.src}
-              alt=""
-              draggable={false}
-              style={{ width: "100%", height: "100%", display: "block", pointerEvents: "none" }}
-            />
+        {/* Rubber-band box */}
+        {normalizedBox && normalizedBox.w > 2 && (
+          <div className="pointer-events-none absolute border border-green-400 bg-green-400/10 z-50"
+            style={{ left: normalizedBox.x, top: normalizedBox.y, width: normalizedBox.w, height: normalizedBox.h }} />
+        )}
 
-            {/* Note indicators — shown when not focused and image has notes */}
-            {!isFocused && img.notes.length > 0 && (
-              <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 3, pointerEvents: "none" }}>
-                {img.notes.slice(0, 4).map((note, i) => {
-                  const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
-                  return (
-                    <div
-                      key={note.id}
-                      style={{
-                        width: 13,
-                        height: 16,
-                        display: "flex",
-                        flexDirection: "column",
-                        boxShadow: "1px 2px 3px rgba(0,0,0,0.5)",
-                        transform: `rotate(${i % 2 === 0 ? 4 : -3}deg)`,
-                      }}
-                    >
-                      <div style={{ background: colors.strip, height: 4, flexShrink: 0 }} />
-                      <div style={{ background: colors.body, flex: 1 }} />
+        {/* Images */}
+        {images.map(img => {
+          const isFocused = focusedId === img.id;
+          return (
+            <div key={img.id} onPointerDown={e => handleImagePointerDown(e, img.id)}
+              style={{ position: "absolute", left: img.x, top: img.y, width: img.width, height: img.height, cursor: "grab", touchAction: "none", userSelect: "none" }}>
+              <img src={img.src} alt="" draggable={false} style={{ width: "100%", height: "100%", display: "block", pointerEvents: "none" }} />
+
+              {/* Note count chips when not focused */}
+              {!isFocused && img.notes.length > 0 && (
+                <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 3, pointerEvents: "none" }}>
+                  {img.notes.slice(0, 4).map((note, i) => {
+                    const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
+                    return (
+                      <div key={note.id} style={{ width: 13, height: 16, display: "flex", flexDirection: "column", boxShadow: "1px 2px 3px rgba(0,0,0,0.5)", transform: `rotate(${i % 2 === 0 ? 4 : -3}deg)` }}>
+                        <div style={{ background: colors.strip, height: 4, flexShrink: 0 }} />
+                        <div style={{ background: colors.body, flex: 1 }} />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Focused image controls */}
+              {isFocused && (
+                <div onPointerDown={e => e.stopPropagation()} style={{ position: "absolute", top: 10, right: 10, display: "flex", gap: 6, zIndex: 45 }}>
+                  {img.notes.length > 0 && (
+                    <>
+                      <button onClick={() => setNotesVisible(v => !v)} title={notesVisible ? "Hide notes" : "Show notes"}
+                        style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(30,30,30,0.75)", border: "1px solid rgba(255,255,255,0.15)", color: "#e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", backdropFilter: "blur(4px)" }}>
+                        {notesVisible ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                      <button onClick={() => setNoteMode("panel")} title="Expand to panel"
+                        style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(30,30,30,0.75)", border: "1px solid rgba(255,255,255,0.15)", color: "#e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", backdropFilter: "blur(4px)" }}>
+                        <PanelRight size={15} />
+                      </button>
+                    </>
+                  )}
+                  <button onClick={() => addNote(img.id)} title="Add note"
+                    style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(30,30,30,0.75)", border: "1px solid rgba(255,255,255,0.15)", color: "#e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", backdropFilter: "blur(4px)" }}>
+                    <Plus size={16} />
+                  </button>
+                  <button onClick={() => {
+                    const orig = focusOrigRef.current[img.id];
+                    if (orig) { update(prev => prev.map(i => i.id === img.id ? { ...i, ...orig } : i)); delete focusOrigRef.current[img.id]; }
+                    focusedIdRef.current = null; setFocusedId(null); setNoteMode("overlay");
+                  }} title="Remove from board"
+                    style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(30,30,30,0.75)", border: "1px solid rgba(255,255,255,0.15)", color: "#f87171", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", backdropFilter: "blur(4px)" }}>
+                    <X size={15} />
+                  </button>
+                </div>
+              )}
+
+              {/* Overlay notes */}
+              {isFocused && noteMode === "overlay" && notesVisible && img.notes.map(note => {
+                const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
+                return (
+                  <div key={note.id} onPointerDown={e => e.stopPropagation()}
+                    style={{ position: "absolute", left: note.fx * img.width, top: note.fy * img.height, width: 220, display: "flex", flexDirection: "column", boxShadow: "4px 5px 16px rgba(0,0,0,0.6), 1px 1px 4px rgba(0,0,0,0.2)", transform: "rotate(-1.5deg)", zIndex: 40 }}>
+                    <svg width="22" height="22" viewBox="0 0 22 22" style={{ position: "absolute", top: -18, left: -18, pointerEvents: "none", filter: "drop-shadow(1px 1px 2px rgba(0,0,0,0.4))" }}>
+                      <polygon points="0,0 22,0 0,22" fill={colors.strip} />
+                    </svg>
+                    <div onPointerDown={e => handleNoteDragStart(e, img.id, note.id)} onPointerMove={e => handleNoteDragMove(e, img.id, note.id)} onPointerUp={handleNoteDragEnd}
+                      style={{ background: colors.strip, height: 28, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 6, cursor: "grab" }}>
+                      <button onPointerDown={e => e.stopPropagation()} onClick={() => setNoteMode("panel")} title="Expand to panel"
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", alignItems: "center", color: "rgba(0,0,0,0.5)", borderRadius: 3 }}>
+                        <PanelRight size={14} />
+                      </button>
+                      <button onPointerDown={e => e.stopPropagation()} onClick={() => deleteNote(img.id, note.id)} title="Delete note"
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", alignItems: "center", color: "rgba(0,0,0,0.5)", borderRadius: 3 }}>
+                        <X size={14} />
+                      </button>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <div style={{ background: colors.body, padding: "8px 10px 26px", position: "relative" }}>
+                      <textarea autoFocus={note.text === ""} value={note.text} onChange={e => handleNoteChange(img.id, note.id, e.target.value)} placeholder="Add a note…" rows={5}
+                        style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontFamily: "inherit", fontSize: 13, color: "#1c1917", lineHeight: 1.6, padding: 0 }} />
+                      <div style={{ position: "absolute", bottom: 0, right: 0, width: 0, height: 0, borderStyle: "solid", borderWidth: "0 0 22px 22px", borderColor: "transparent transparent #171717 transparent", filter: "drop-shadow(-1px -1px 2px rgba(0,0,0,0.25))" }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
 
-            {/* Add note / toggle visibility buttons — shown when image is focused */}
-            {isFocused && (
-              <div
-                onPointerDown={e => e.stopPropagation()}
-                style={{
-                  position: "absolute",
-                  top: 10,
-                  right: 10,
-                  display: "flex",
-                  gap: 6,
-                  zIndex: 45,
-                }}
-              >
-                {img.notes.length > 0 && (
-                  <>
-                    <button
-                      onClick={() => setNotesVisible(v => !v)}
-                      title={notesVisible ? "Hide notes" : "Show notes"}
-                      style={{
-                        width: 28, height: 28,
-                        borderRadius: "50%",
-                        background: "rgba(30,30,30,0.75)",
-                        border: "1px solid rgba(255,255,255,0.15)",
-                        color: "#e5e5e5",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        cursor: "pointer",
-                        backdropFilter: "blur(4px)",
-                      }}
-                    >
-                      {notesVisible ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                    <button
-                      onClick={() => setNoteMode("panel")}
-                      title="Expand to panel"
-                      style={{
-                        width: 28, height: 28,
-                        borderRadius: "50%",
-                        background: "rgba(30,30,30,0.75)",
-                        border: "1px solid rgba(255,255,255,0.15)",
-                        color: "#e5e5e5",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        cursor: "pointer",
-                        backdropFilter: "blur(4px)",
-                      }}
-                    >
-                      <PanelRight size={15} />
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => addNote(img.id)}
-                  title="Add note"
-                  style={{
-                    width: 28, height: 28,
-                    borderRadius: "50%",
-                    background: "rgba(30,30,30,0.75)",
-                    border: "1px solid rgba(255,255,255,0.15)",
-                    color: "#e5e5e5",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    cursor: "pointer",
-                    backdropFilter: "blur(4px)",
-                  }}
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
+        {/* Group selection + resize handle */}
+        {groupBounds && (
+          <div style={{ position: "absolute", left: groupBounds.x - PAD, top: groupBounds.y - PAD, width: groupBounds.width + PAD * 2, height: groupBounds.height + PAD * 2, border: "2px solid #22c55e", pointerEvents: "none", zIndex: 30 }}>
+            {shiftHeld && (
+              <div onPointerDown={handleResizePointerDown} style={{ position: "absolute", bottom: -7, right: -7, width: 14, height: 14, background: "#22c55e", border: "2px solid #15803d", borderRadius: 2, cursor: "se-resize", pointerEvents: "auto" }} />
             )}
+          </div>
+        )}
+      </div>
 
-            {/* Overlay notes — shown when focused in overlay mode and notes are visible */}
-            {isFocused && noteMode === "overlay" && notesVisible && img.notes.map(note => {
+      {/* Notes panel */}
+      {noteMode === "panel" && focusedImage && (
+        <div onPointerDown={e => e.stopPropagation()} style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", borderLeft: "1px solid #404040", overflow: "hidden", background: "#1a1a1a" }}>
+          <div style={{ height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", borderBottom: "1px solid #404040" }}>
+            <span style={{ fontSize: 11, color: "#737373", letterSpacing: "0.06em", fontWeight: 600 }}>NOTES</span>
+            <button onClick={() => setNoteMode("overlay")} title="Switch to overlay view" style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex", alignItems: "center", color: "#737373", borderRadius: 3 }}>
+              <StickyNote size={15} />
+            </button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 12 }}>
+            {focusedImage.notes.length === 0 && (
+              <p style={{ fontSize: 12, color: "#525252", textAlign: "center", marginTop: 24 }}>No notes yet. Click + to add one.</p>
+            )}
+            {focusedImage.notes.map(note => {
               const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
               return (
-                <div
-                  key={note.id}
-                  onPointerDown={e => e.stopPropagation()}
-                  style={{
-                    position: "absolute",
-                    left: note.fx * img.width,
-                    top: note.fy * img.height,
-                    width: 220,
-                    display: "flex",
-                    flexDirection: "column",
-                    boxShadow: "4px 5px 16px rgba(0,0,0,0.6), 1px 1px 4px rgba(0,0,0,0.2)",
-                    transform: "rotate(-1.5deg)",
-                    zIndex: 40,
-                  }}
-                >
-                  {/* Arrow pointer at top-left corner */}
-                  <svg
-                    width="22" height="22" viewBox="0 0 22 22"
-                    style={{
-                      position: "absolute",
-                      top: -18, left: -18,
-                      pointerEvents: "none",
-                      filter: "drop-shadow(1px 1px 2px rgba(0,0,0,0.4))",
-                    }}
-                  >
-                    <polygon points="0,0 22,0 0,22" fill={colors.strip} />
-                  </svg>
-
-                  {/* Adhesive strip — drag handle */}
-                  <div
-                    onPointerDown={e => handleNoteDragStart(e, img.id, note.id)}
-                    onPointerMove={e => handleNoteDragMove(e, img.id, note.id)}
-                    onPointerUp={handleNoteDragEnd}
-                    style={{
-                      background: colors.strip,
-                      height: 28,
-                      flexShrink: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "flex-end",
-                      paddingRight: 6,
-                      cursor: "grab",
-                    }}
-                  >
-                    <button
-                      onPointerDown={e => e.stopPropagation()}
-                      onClick={() => setNoteMode("panel")}
-                      title="Expand to panel"
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", alignItems: "center", color: "rgba(0,0,0,0.5)", borderRadius: 3 }}
-                    >
-                      <PanelRight size={14} />
-                    </button>
-                    <button
-                      onPointerDown={e => e.stopPropagation()}
-                      onClick={() => deleteNote(img.id, note.id)}
-                      title="Delete note"
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", alignItems: "center", color: "rgba(0,0,0,0.5)", borderRadius: 3 }}
-                    >
+                <div key={note.id} style={{ borderRadius: 2, overflow: "hidden", boxShadow: "2px 3px 8px rgba(0,0,0,0.4)", marginBottom: 10 }}>
+                  <div style={{ background: colors.strip, height: 26, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4 }}>
+                    <button onClick={() => deleteNote(focusedImage.id, note.id)} title="Delete note" style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", alignItems: "center", color: "rgba(0,0,0,0.45)", borderRadius: 3 }}>
                       <X size={14} />
                     </button>
                   </div>
-
-                  {/* Note body */}
-                  <div style={{ background: colors.body, padding: "8px 10px 26px", position: "relative" }}>
-                    <textarea
-                      autoFocus={note.text === ""}
-                      value={note.text}
-                      onChange={e => handleNoteChange(img.id, note.id, e.target.value)}
-                      placeholder="Add a note…"
-                      rows={5}
-                      style={{
-                        width: "100%",
-                        background: "transparent",
-                        border: "none",
-                        outline: "none",
-                        resize: "none",
-                        fontFamily: "inherit",
-                        fontSize: 13,
-                        color: "#1c1917",
-                        lineHeight: 1.6,
-                        padding: 0,
-                      }}
-                    />
-                    {/* Folded corner */}
-                    <div style={{
-                      position: "absolute",
-                      bottom: 0, right: 0,
-                      width: 0, height: 0,
-                      borderStyle: "solid",
-                      borderWidth: "0 0 22px 22px",
-                      borderColor: `transparent transparent #171717 transparent`,
-                      filter: "drop-shadow(-1px -1px 2px rgba(0,0,0,0.25))",
-                    }} />
-                  </div>
+                  <GrowTextarea value={note.text} onChange={e => handleNoteChange(focusedImage.id, note.id, e.target.value)} placeholder="Add a note…"
+                    style={{ background: colors.body, fontSize: 13, color: "#1c1917", lineHeight: 1.6, padding: "8px 10px" }} />
                 </div>
               );
             })}
           </div>
-        );
-      })}
-
-      {/* Group selection box + single resize handle */}
-      {groupBounds && (
-        <div
-          style={{
-            position: "absolute",
-            left: groupBounds.x - PAD,
-            top: groupBounds.y - PAD,
-            width: groupBounds.width + PAD * 2,
-            height: groupBounds.height + PAD * 2,
-            border: "2px solid #22c55e",
-            pointerEvents: "none",
-            zIndex: 30,
-          }}
-        >
-          {shiftHeld && (
-            <div
-              onPointerDown={handleResizePointerDown}
-              style={{
-                position: "absolute",
-                bottom: -7, right: -7,
-                width: 14, height: 14,
-                background: "#22c55e",
-                border: "2px solid #15803d",
-                borderRadius: 2,
-                cursor: "se-resize",
-                pointerEvents: "auto",
-              }}
-            />
-          )}
         </div>
       )}
-    </div>
-
-    {/* Panel — 1/3 width, all notes for the focused image */}
-    {noteMode === "panel" && focusedImage && (
-      <div
-        onPointerDown={e => e.stopPropagation()}
-        style={{
-          flex: "1 1 0%",
-          display: "flex",
-          flexDirection: "column",
-          borderLeft: "1px solid #404040",
-          overflow: "hidden",
-          background: "#1a1a1a",
-        }}
-      >
-        {/* Panel header */}
-        <div style={{
-          height: 36,
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 12px",
-          borderBottom: "1px solid #404040",
-        }}>
-          <span style={{ fontSize: 11, color: "#737373", letterSpacing: "0.06em", fontWeight: 600 }}>NOTES</span>
-          <button
-            onClick={() => setNoteMode("overlay")}
-            title="Switch to overlay view"
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 4,
-              display: "flex",
-              alignItems: "center",
-              color: "#737373",
-              borderRadius: 3,
-            }}
-          >
-            <StickyNote size={15} />
-          </button>
-        </div>
-
-        {/* Note cards */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 12 }}>
-          {focusedImage.notes.length === 0 && (
-            <p style={{ fontSize: 12, color: "#525252", textAlign: "center", marginTop: 24 }}>
-              No notes yet. Click + to add one.
-            </p>
-          )}
-          {focusedImage.notes.map(note => {
-            const colors = NOTE_PALETTE[note.colorIdx % NOTE_PALETTE.length];
-            return (
-              <div key={note.id} style={{ borderRadius: 2, overflow: "hidden", boxShadow: "2px 3px 8px rgba(0,0,0,0.4)", marginBottom: 10 }}>
-                <div style={{ background: colors.strip, height: 26, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4 }}>
-                  <button
-                    onClick={() => deleteNote(focusedImage.id, note.id)}
-                    title="Delete note"
-                    style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", alignItems: "center", color: "rgba(0,0,0,0.45)", borderRadius: 3 }}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-                <GrowTextarea
-                  value={note.text}
-                  onChange={e => handleNoteChange(focusedImage.id, note.id, e.target.value)}
-                  placeholder="Add a note…"
-                  style={{
-                    background: colors.body,
-                    fontSize: 13,
-                    color: "#1c1917",
-                    lineHeight: 1.6,
-                    padding: "8px 10px",
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    )}
     </div>
   );
 }

@@ -192,6 +192,7 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
   const [boxState, setBoxState]         = useState<BoxState>(null);
   const [isDragOver, setIsDragOver]     = useState(false);
   const [isUploading, setIsUploading]   = useState(false);
+  const [uploadError, setUploadError]   = useState<string | null>(null);
   const [shiftHeld, setShiftHeld]       = useState(false);
   const [focusedId, setFocusedId]       = useState<string | null>(null);
   const [noteMode, setNoteMode]         = useState<NoteMode>("overlay");
@@ -303,43 +304,73 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
     return () => clearTimeout(t);
   }, [pendingFocusId, focusImageById, onFocusConsumed]);
 
-  // ── Upload image to Vercel Blob ───────────────────────────────────────────
+  // ── Place an image src (URL or base64) onto the canvas ───────────────────
+
+  const placeImage = useCallback((src: string, dropX: number, dropY: number, canvasRect: DOMRect) => {
+    const img = new Image();
+    img.src = src;
+    const place = () => {
+      const { width, height } = getScaledSize(img.naturalWidth, img.naturalHeight, canvasRect.width, canvasRect.height);
+      update(prev => [...prev, {
+        id: crypto.randomUUID(), src,
+        x: Math.max(0, dropX - width / 2),
+        y: Math.max(0, dropY - height / 2),
+        width, height, notes: [],
+      }]);
+    };
+    if (img.complete && img.naturalWidth > 0) place(); else img.onload = place;
+  }, [update]);
+
+  // ── Upload a File to Vercel Blob, fall back to base64 on failure ──────────
 
   const uploadAndPlace = useCallback(async (file: File, dropX: number, dropY: number, canvasRect: DOMRect) => {
     setIsUploading(true);
+    setUploadError(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
       const res = await fetch(`/api/refboard/upload?projectId=${projectId}`, { method: "POST", body: formData });
-      if (!res.ok) { console.error("Upload failed:", await res.text()); return; }
-      const { url } = await res.json() as { url: string };
-      const img = new Image();
-      img.src = url;
-      img.onload = () => {
-        const { width, height } = getScaledSize(img.naturalWidth, img.naturalHeight, canvasRect.width, canvasRect.height);
-        update(prev => [...prev, { id: crypto.randomUUID(), src: url, x: Math.max(0, dropX - width / 2), y: Math.max(0, dropY - height / 2), width, height, notes: [] }]);
-      };
+      if (res.ok) {
+        const { url } = await res.json() as { url: string };
+        placeImage(url, dropX, dropY, canvasRect);
+      } else {
+        // Blob not configured or other server error — fall back to base64
+        const reader = new FileReader();
+        reader.onload = () => placeImage(reader.result as string, dropX, dropY, canvasRect);
+        reader.readAsDataURL(file);
+      }
+    } catch {
+      // Network error — fall back to base64
+      const reader = new FileReader();
+      reader.onload = () => placeImage(reader.result as string, dropX, dropY, canvasRect);
+      reader.readAsDataURL(file);
     } finally {
       setIsUploading(false);
     }
-  }, [projectId, update]);
+  }, [projectId, placeImage]);
 
   // ── Drop handler ──────────────────────────────────────────────────────────
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+    setUploadError(null);
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const dropX = e.clientX - rect.left;
     const dropY = e.clientY - rect.top;
 
+    // Prefer dropped files (local disk)
     if (e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (file.type.startsWith("image/")) { await uploadAndPlace(file, dropX, dropY, rect); return; }
+      if (file.type.startsWith("image/")) {
+        await uploadAndPlace(file, dropX, dropY, rect);
+        return;
+      }
     }
 
+    // Dragged from web — extract the image URL
     const uriList = e.dataTransfer.getData("text/uri-list");
     const html    = e.dataTransfer.getData("text/html");
     let srcUrl: string | null = null;
@@ -347,16 +378,26 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
     if (!srcUrl && html) { const m = html.match(/src=["']([^"']+)["']/); if (m?.[1]) srcUrl = m[1]; }
     if (!srcUrl) return;
 
+    // Send URL to the server — it fetches server-side so CORS isn't an issue
+    setIsUploading(true);
+    setUploadError(null);
     try {
-      setIsUploading(true);
-      const fetched = await fetch(srcUrl);
-      const blob = await fetched.blob();
-      if (!blob.type.startsWith("image/")) return;
-      const ext = blob.type.split("/")[1] ?? "png";
-      await uploadAndPlace(new File([blob], `dropped.${ext}`, { type: blob.type }), dropX, dropY, rect);
-    } catch { console.error("Could not fetch dropped image URL"); }
-    finally { setIsUploading(false); }
-  }, [uploadAndPlace]);
+      const formData = new FormData();
+      formData.append("url", srcUrl);
+      const res = await fetch(`/api/refboard/upload?projectId=${projectId}`, { method: "POST", body: formData });
+      if (res.ok) {
+        const { url } = await res.json() as { url: string };
+        placeImage(url, dropX, dropY, rect);
+      } else {
+        const msg = await res.text();
+        setUploadError(`Could not add image: ${msg}`);
+      }
+    } catch {
+      setUploadError("Could not add image: network error");
+    } finally {
+      setIsUploading(false);
+    }
+  }, [projectId, uploadAndPlace, placeImage]);
 
   const handleDragOver  = useCallback((e: React.DragEvent) => { e.preventDefault(); if (!activeOp.current) setIsDragOver(true); }, []);
   const handleDragLeave = useCallback(() => setIsDragOver(false), []);
@@ -520,6 +561,16 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed }: RefBoardP
               <span style={{ fontSize: 13, color: "#a3a3a3" }}>Uploading…</span>
             </div>
             <style>{`@keyframes canvas-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
+
+        {/* Upload error toast */}
+        {uploadError && (
+          <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", zIndex: 60, background: "rgba(20,20,20,0.92)", border: "1px solid #7f1d1d", borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, maxWidth: 380 }}>
+            <span style={{ fontSize: 13, color: "#f87171" }}>{uploadError}</span>
+            <button onClick={() => setUploadError(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#737373", display: "flex", alignItems: "center", padding: 2, flexShrink: 0 }}>
+              <X size={14} />
+            </button>
           </div>
         )}
 

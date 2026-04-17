@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Plus } from "lucide-react";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 import { RoomProvider, useStorage, useMutation } from "@/lib/liveblocks-canvas";
+import CanvasLoader from "@/components/CanvasLoader";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ export default function CodeLayout({ projectId }: { projectId: string }) {
     })();
   }, [projectId]);
 
-  if (!initialJson) return null;
+  if (!initialJson) return <CanvasLoader />;
 
   return (
     <RoomProvider
@@ -109,7 +110,7 @@ function CodeLayoutInner({ projectId }: { projectId: string }) {
   });
 
   // Wait for Liveblocks storage to hydrate
-  if (!canvasJson) return null;
+  if (!canvasJson) return <CanvasLoader />;
 
   const objects = JSON.parse(canvasJson) as GameObject[];
 

@@ -13,6 +13,7 @@ import {
   CardModal, CARD_COLORS, DEFAULT_COLOR_LABELS, makeId,
   type Card, type Member, type RefBoardImage,
 } from "./CardModal";
+import CanvasLoader from "@/components/CanvasLoader";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -78,7 +79,7 @@ export default function ProgressBoard({ projectId, onImageRefClick }: {
     })();
   }, [projectId]);
 
-  if (!initialBoardJson) return null;
+  if (!initialBoardJson) return <CanvasLoader />;
 
   return (
     <RoomProvider id={`progress_${projectId}`} initialStorage={{ boardJson: initialBoardJson }}>
@@ -126,7 +127,7 @@ function ProgressBoardInner({ projectId, onImageRefClick }: {
       .catch(() => {});
   }, [projectId]);
 
-  if (!boardJson) return null;
+  if (!boardJson) return <CanvasLoader />;
 
   const board = JSON.parse(boardJson) as BoardState;
 

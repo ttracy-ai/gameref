@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 import { CollaborativePageRoom, GDDPage, GDDData } from "./PageEditor";
+import CanvasLoader from "@/components/CanvasLoader";
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -125,13 +126,7 @@ export default function GDDEditor({ projectId, onImageRefClick }: {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  if (!hasDbLoaded) {
-    return (
-      <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", background: "#171717" }}>
-        <span style={{ color: "#404040", fontSize: 13 }}>Loading…</span>
-      </div>
-    );
-  }
+  if (!hasDbLoaded) return <CanvasLoader />;
 
   return (
     <CollaborativePageRoom

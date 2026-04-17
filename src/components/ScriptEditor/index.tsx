@@ -12,6 +12,7 @@ import {
   ScriptBlock, BLOCK_CONFIG, NEXT_TYPE, ALL_TYPES, makeId,
   type Block, type BlockType, type ScriptData,
 } from "./ScriptBlock";
+import CanvasLoader from "@/components/CanvasLoader";
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ export default function ScriptEditor({ projectId }: { projectId: string }) {
     })();
   }, [projectId]);
 
-  if (!initialJson) return null;
+  if (!initialJson) return <CanvasLoader />;
 
   return (
     <RoomProvider id={`script_${projectId}`} initialStorage={{ canvasJson: initialJson }}>
@@ -90,7 +91,7 @@ function ScriptEditorInner({ projectId }: { projectId: string }) {
     }
   });
 
-  if (!canvasJson) return null;
+  if (!canvasJson) return <CanvasLoader />;
 
   const script = JSON.parse(canvasJson) as ScriptData;
 

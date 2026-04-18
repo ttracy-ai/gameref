@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, X, Images, Trash2, Pencil } from "lucide-react";
+import { Plus, X, Images, Trash2, Pencil, GripVertical } from "lucide-react";
+import { DragDropContext, Droppable, Draggable, DropResult, DraggableProvidedDraggableProps, DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 import { RoomProvider, useStorage, useMutation } from "@/lib/liveblocks-ideation";
 import CanvasLoader from "@/components/CanvasLoader";
@@ -129,39 +130,66 @@ function IdeationCanvasInner({ projectId }: { projectId: string }) {
     updateIdea(ideaId, { imageRefs: next });
   }
 
+  function onDragEnd(result: DropResult) {
+    const { source, destination } = result;
+    if (!destination || source.index === destination.index) return;
+    update((prev) => {
+      const ideas = [...prev.ideas];
+      const [moved] = ideas.splice(source.index, 1);
+      ideas.splice(destination.index, 0, moved);
+      return { ...prev, ideas };
+    });
+  }
+
   return (
     <main className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-900">
-      <div className="flex gap-3 p-4 h-full overflow-x-auto overflow-y-hidden">
+      <DragDropContext onDragEnd={onDragEnd}>
+        <Droppable droppableId="ideation-columns" direction="horizontal">
+          {(provided) => (
+            <div
+              ref={provided.innerRef}
+              {...provided.droppableProps}
+              className="flex gap-3 p-4 h-full overflow-x-auto overflow-y-hidden"
+            >
+              {state.ideas.map((idea, index) => (
+                <Draggable key={idea.id} draggableId={idea.id} index={index}>
+                  {(drag, snapshot) => (
+                    <IdeaCard
+                      idea={idea}
+                      refImages={refImages}
+                      showPicker={showPickerFor === idea.id}
+                      initialEditing={newIdeaIds.has(idea.id)}
+                      isDragging={snapshot.isDragging}
+                      draggableRef={drag.innerRef}
+                      draggableProps={drag.draggableProps}
+                      dragHandleProps={drag.dragHandleProps}
+                      onTogglePicker={() =>
+                        setShowPickerFor(showPickerFor === idea.id ? null : idea.id)
+                      }
+                      onUpdate={(patch) => updateIdea(idea.id, patch)}
+                      onToggleImage={(imgId) => toggleImageRef(idea.id, imgId, idea.imageRefs)}
+                      onDelete={() => deleteIdea(idea.id)}
+                    />
+                  )}
+                </Draggable>
+              ))}
+              {provided.placeholder}
 
-        {state.ideas.map((idea) => (
-          <IdeaCard
-            key={idea.id}
-            idea={idea}
-            refImages={refImages}
-            showPicker={showPickerFor === idea.id}
-            initialEditing={newIdeaIds.has(idea.id)}
-            onTogglePicker={() =>
-              setShowPickerFor(showPickerFor === idea.id ? null : idea.id)
-            }
-            onUpdate={(patch) => updateIdea(idea.id, patch)}
-            onToggleImage={(imgId) => toggleImageRef(idea.id, imgId, idea.imageRefs)}
-            onDelete={() => deleteIdea(idea.id)}
-          />
-        ))}
-
-        {/* Add Idea */}
-        <div
-          style={{ flexShrink: 0, width: "calc(20% - 9.6px)" }}
-          className="flex items-center justify-center rounded-xl border-2 border-dashed border-neutral-700 hover:border-neutral-500 transition-colors cursor-pointer group min-h-0"
-          onClick={addIdea}
-        >
-          <div className="flex flex-col items-center gap-2 text-neutral-600 group-hover:text-neutral-400 transition-colors select-none">
-            <Plus size={24} />
-            <span className="text-sm">New Idea</span>
-          </div>
-        </div>
-
-      </div>
+              {/* Add Idea — not draggable, always at the end */}
+              <div
+                style={{ flexShrink: 0, width: "calc(20% - 9.6px)" }}
+                className="flex items-center justify-center rounded-xl border-2 border-dashed border-neutral-700 hover:border-neutral-500 transition-colors cursor-pointer group min-h-0"
+                onClick={addIdea}
+              >
+                <div className="flex flex-col items-center gap-2 text-neutral-600 group-hover:text-neutral-400 transition-colors select-none">
+                  <Plus size={24} />
+                  <span className="text-sm">New Idea</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </Droppable>
+      </DragDropContext>
     </main>
   );
 }
@@ -173,6 +201,10 @@ function IdeaCard({
   refImages,
   showPicker,
   initialEditing,
+  isDragging,
+  draggableRef,
+  draggableProps,
+  dragHandleProps,
   onTogglePicker,
   onUpdate,
   onToggleImage,
@@ -182,6 +214,10 @@ function IdeaCard({
   refImages: RefBoardImage[];
   showPicker: boolean;
   initialEditing: boolean;
+  isDragging: boolean;
+  draggableRef: (el: HTMLElement | null) => void;
+  draggableProps: DraggableProvidedDraggableProps;
+  dragHandleProps: DraggableProvidedDragHandleProps | null | undefined;
   onTogglePicker: () => void;
   onUpdate: (patch: Partial<IdeaColumn>) => void;
   onToggleImage: (imgId: string) => void;
@@ -192,21 +228,32 @@ function IdeaCard({
 
   return (
     <div
-      style={{ flexShrink: 0, width: "calc(20% - 9.6px)" }}
-      className="flex flex-col rounded-xl bg-neutral-800 max-h-full overflow-hidden"
+      ref={draggableRef}
+      {...draggableProps}
+      style={{ flexShrink: 0, width: "calc(20% - 9.6px)", ...draggableProps.style }}
+      className={`flex flex-col rounded-xl bg-neutral-800 max-h-full overflow-hidden transition-shadow ${
+        isDragging ? "shadow-2xl shadow-black/70 opacity-95" : ""
+      }`}
     >
       {/* Prominent title header — outside the scroll area */}
-      <div className="shrink-0 px-4 pt-4 pb-3 border-b border-neutral-700/60">
+      <div className="shrink-0 px-4 pt-3 pb-3 border-b border-neutral-700/60 flex items-center gap-2">
+        {/* Drag handle */}
+        <div
+          {...dragHandleProps}
+          className="shrink-0 text-neutral-600 hover:text-neutral-400 cursor-grab active:cursor-grabbing transition-colors"
+        >
+          <GripVertical size={15} />
+        </div>
         {editing ? (
           <input
             value={idea.title}
             onChange={(e) => onUpdate({ title: e.target.value })}
-            className="w-full bg-transparent text-neutral-100 font-bold text-xl outline-none border-b border-neutral-600 pb-1 placeholder:text-neutral-600 transition-colors"
+            className="flex-1 bg-transparent text-neutral-100 font-bold text-xl outline-none border-b border-neutral-600 pb-1 placeholder:text-neutral-600 transition-colors"
             placeholder="Idea title…"
             autoFocus
           />
         ) : (
-          <h2 className="text-xl font-bold text-neutral-100 leading-tight break-words">
+          <h2 className="flex-1 text-xl font-bold text-neutral-100 leading-tight break-words">
             {idea.title || <span className="text-neutral-600 font-normal italic">Untitled</span>}
           </h2>
         )}

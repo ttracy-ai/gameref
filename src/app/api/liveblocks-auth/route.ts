@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   //   polls_{projectId}                                — Polls
   const match =
     (room as string).match(/^gdd_([^_]+)_.+$/) ??
-    (room as string).match(/^(?:progress|codelayout|script|team|refboard|ideation|polls)_([^_]+)$/);
+    (room as string).match(/^(?:progress|codelayout|script|team|refboard|ideation|polls|map)_([^_]+)$/);
   if (!match) return new Response("Invalid room", { status: 400 });
   const projectId = match[1];
 

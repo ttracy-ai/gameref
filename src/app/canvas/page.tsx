@@ -19,6 +19,7 @@ import TeamCanvas from "@/components/TeamCanvas";
 import SettingsCanvas from "@/components/SettingsCanvas";
 import IdeationCanvas from "@/components/IdeationCanvas";
 import PollsCanvas from "@/components/PollsCanvas";
+import MapLayout from "@/components/MapLayout";
 
 type ActiveProject = { id: string; name: string };
 
@@ -260,7 +261,7 @@ export default function CanvasPage() {
       ) : active === "code-layout" ? (
         <CodeLayout key={projectId} projectId={projectId} />
       ) : active === "map-layout" ? (
-        <Placeholder label="Map Layout" />
+        <MapLayout key={projectId} projectId={projectId} />
       ) : active === "polls" ? (
         <PollsCanvas key={projectId} projectId={projectId} />
       ) : active === "team" ? (

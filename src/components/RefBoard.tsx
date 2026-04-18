@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { PanelRight, StickyNote, Plus, Eye, EyeOff, X } from "lucide-react";
+import { PanelRight, StickyNote, Plus, Eye, EyeOff, X, Pencil } from "lucide-react";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 import { RoomProvider, useStorage, useMutation } from "@/lib/liveblocks-canvas";
 import CanvasLoader from "@/components/CanvasLoader";
@@ -160,7 +160,6 @@ function PageTab({ page, isActive, canDelete, onSwitch, onDelete, onRename }: {
   return (
     <div
       onClick={onSwitch}
-      onDoubleClick={() => { setRenaming(true); setValue(page.title); }}
       className={`group shrink-0 flex items-center gap-1 px-3 h-7 rounded text-xs cursor-pointer transition-colors select-none ${
         isActive
           ? "bg-neutral-700 text-neutral-100"
@@ -168,10 +167,18 @@ function PageTab({ page, isActive, canDelete, onSwitch, onDelete, onRename }: {
       }`}
     >
       <span>{page.title}</span>
+      <button
+        onClick={(e) => { e.stopPropagation(); setRenaming(true); setValue(page.title); }}
+        className="opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-neutral-300 transition-all ml-0.5 flex items-center"
+        title="Rename page"
+      >
+        <Pencil size={10} />
+      </button>
       {canDelete && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-red-400 transition-all -mr-1 ml-0.5 flex items-center"
+          className="opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-red-400 transition-all flex items-center"
+          title="Delete page"
         >
           <X size={10} />
         </button>

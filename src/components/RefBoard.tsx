@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { PanelRight, StickyNote, Plus, Eye, EyeOff, X, Pencil } from "lucide-react";
+import { PanelRight, StickyNote, Plus, Eye, EyeOff, X, Pencil, Link2, ExternalLink } from "lucide-react";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 import { RoomProvider, useStorage, useMutation } from "@/lib/liveblocks-canvas";
 import CanvasLoader from "@/components/CanvasLoader";
@@ -28,10 +28,16 @@ type PlacedImage = {
   notes: ImageNote[];
 };
 
+type PlacedLink = {
+  id: string; url: string; title: string; favicon: string;
+  x: number; y: number; width: number; height: number;
+};
+
 type RefBoardPage = {
   id: string;
   title: string;
   images: PlacedImage[];
+  links: PlacedLink[];
 };
 
 type RefBoardData = {
@@ -60,11 +66,11 @@ function normalizeBox(b: NonNullable<BoxState>) {
   return { x: Math.min(b.startX, b.currentX), y: Math.min(b.startY, b.currentY), w: Math.abs(b.currentX - b.startX), h: Math.abs(b.currentY - b.startY) };
 }
 
-function boxIntersects(img: PlacedImage, box: { x: number; y: number; w: number; h: number }) {
+function boxIntersects(img: { x: number; y: number; width: number; height: number }, box: { x: number; y: number; w: number; h: number }) {
   return img.x < box.x + box.w && img.x + img.width > box.x && img.y < box.y + box.h && img.y + img.height > box.y;
 }
 
-function groupBoundsOf(imgs: PlacedImage[]) {
+function groupBoundsOf(imgs: { x: number; y: number; width: number; height: number }[]) {
   if (imgs.length === 0) return null;
   return {
     x: Math.min(...imgs.map(i => i.x)), y: Math.min(...imgs.map(i => i.y)),
@@ -89,13 +95,15 @@ function migrateImages(raw: any[]): PlacedImage[] {
 function toRefBoardData(raw: unknown): RefBoardData {
   // Old format: PlacedImage[] — migrate to single default page
   if (Array.isArray(raw)) {
-    return { pages: [{ id: "default", title: "Page 1", images: migrateImages(raw) }] };
+    return { pages: [{ id: "default", title: "Page 1", images: migrateImages(raw), links: [] }] };
   }
-  const data = raw as Partial<RefBoardData>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = raw as any;
   if (!data.pages || !Array.isArray(data.pages)) {
-    return { pages: [{ id: "default", title: "Page 1", images: [] }] };
+    return { pages: [{ id: "default", title: "Page 1", images: [], links: [] }] };
   }
-  return { pages: data.pages.map(p => ({ ...p, images: migrateImages(p.images ?? []) })) };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { pages: data.pages.map((p: any) => ({ ...p, images: migrateImages(p.images ?? []), links: p.links ?? [] })) };
 }
 
 function allImages(data: RefBoardData): PlacedImage[] {
@@ -188,6 +196,63 @@ function PageTab({ page, isActive, canDelete, onSwitch, onDelete, onRename }: {
 }
 
 
+// ── AddLinkModal ──────────────────────────────────────────────────────────────
+
+function AddLinkModal({ onAdd, onClose }: {
+  onAdd: (url: string, title: string, favicon: string) => void;
+  onClose: () => void;
+}) {
+  const [url, setUrl]         = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+
+  async function submit() {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    let normalized = trimmed;
+    if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`;
+    let hostname = "";
+    try { hostname = new URL(normalized).hostname; } catch { setError("Invalid URL"); return; }
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`/api/refboard/link-preview?url=${encodeURIComponent(normalized)}`);
+      const data = res.ok ? await res.json() as { title: string; favicon: string } : null;
+      onAdd(normalized, data?.title ?? hostname, data?.favicon ?? `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`);
+      onClose();
+    } catch {
+      onAdd(normalized, hostname, `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`);
+      onClose();
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onPointerDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: "#1a1a1a", border: "1px solid #404040", borderRadius: 10, padding: 20, width: 380, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+        <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 600, color: "#e5e5e5" }}>Add Link</p>
+        <input
+          autoFocus
+          value={url}
+          onChange={e => { setUrl(e.target.value); setError(null); }}
+          onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") onClose(); }}
+          placeholder="https://example.com"
+          style={{ width: "100%", background: "#262626", border: `1px solid ${error ? "#7f1d1d" : "#404040"}`, borderRadius: 6, padding: "7px 10px", fontSize: 13, color: "#e5e5e5", outline: "none", boxSizing: "border-box" }}
+        />
+        {error && <p style={{ margin: "6px 0 0", fontSize: 12, color: "#f87171" }}>{error}</p>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button onClick={onClose} style={{ padding: "5px 14px", fontSize: 12, background: "none", border: "1px solid #404040", borderRadius: 6, color: "#737373", cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button onClick={submit} disabled={loading} style={{ padding: "5px 14px", fontSize: 12, background: "#22c55e", border: "none", borderRadius: 6, color: "#052e16", fontWeight: 600, cursor: loading ? "default" : "pointer", opacity: loading ? 0.7 : 1 }}>
+            {loading ? "Fetching…" : "Add"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ── Outer shell ───────────────────────────────────────────────────────────────
 
 type RefBoardProps = {
@@ -244,7 +309,7 @@ export default function RefBoard({ projectId, pendingFocusId, onFocusConsumed }:
         }
       } catch {}
       // Empty board
-      const data: RefBoardData = { pages: [{ id: "default", title: "Page 1", images: [] }] };
+      const data: RefBoardData = { pages: [{ id: "default", title: "Page 1", images: [], links: [] }] };
       setInitialPageId("default");
       setInitialJson(JSON.stringify(data));
     })();
@@ -286,6 +351,7 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
   const [isDragOver, setIsDragOver]     = useState(false);
   const [isUploading, setIsUploading]   = useState(false);
   const [uploadError, setUploadError]   = useState<string | null>(null);
+  const [showAddLink, setShowAddLink]   = useState(false);
   const [shiftHeld, setShiftHeld]       = useState(false);
   const [focusedId, setFocusedId]       = useState<string | null>(null);
   const [noteMode, setNoteMode]         = useState<NoteMode>("overlay");
@@ -294,6 +360,7 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
   const canvasRef      = useRef<HTMLDivElement>(null);
   const activeOp       = useRef<ActiveOp | null>(null);
   const imagesRef      = useRef<PlacedImage[]>([]);
+  const linksRef       = useRef<PlacedLink[]>([]);
   const boardRef       = useRef<RefBoardData>({ pages: [] });
   const selectedIdsRef = useRef(selectedIds);
   const activePageIdRef = useRef(activePageId);
@@ -302,11 +369,13 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
   const noteDragRef    = useRef<{ startX: number; startY: number; origFx: number; origFy: number; imageId: string; noteId: string } | null>(null);
 
   // Derive board data and active page images
-  const boardData: RefBoardData = canvasJson ? toRefBoardData(JSON.parse(canvasJson)) : { pages: [{ id: initialPageId, title: "Page 1", images: [] }] };
+  const boardData: RefBoardData = canvasJson ? toRefBoardData(JSON.parse(canvasJson)) : { pages: [{ id: initialPageId, title: "Page 1", images: [], links: [] }] };
   // If active page was deleted by a collaborator, fall back to first page
   const activePage = boardData.pages.find(p => p.id === activePageId) ?? boardData.pages[0];
   const images: PlacedImage[] = activePage?.images ?? [];
+  const links: PlacedLink[]   = activePage?.links  ?? [];
   imagesRef.current = images;
+  linksRef.current  = links;
   boardRef.current  = boardData;
 
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
@@ -341,6 +410,29 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
     }));
   }, [updateBoard]);
 
+  const updateLinks = useCallback((fn: (prev: PlacedLink[]) => PlacedLink[]) => {
+    updateBoard(prev => ({
+      ...prev,
+      pages: prev.pages.map(p =>
+        p.id === activePageIdRef.current ? { ...p, links: fn(p.links) } : p
+      ),
+    }));
+  }, [updateBoard]);
+
+  const addLink = useCallback((url: string, title: string, favicon: string) => {
+    const rect = canvasRef.current?.getBoundingClientRect() ?? { width: 800, height: 600 };
+    updateLinks(prev => [...prev, {
+      id: crypto.randomUUID(), url, title, favicon,
+      x: Math.round((rect.width  - 280) / 2),
+      y: Math.round((rect.height - 100) / 2),
+      width: 280, height: 100,
+    }]);
+  }, [updateLinks]);
+
+  const deleteLink = useCallback((id: string) => {
+    updateLinks(prev => prev.filter(l => l.id !== id));
+  }, [updateLinks]);
+
   // ── Page management ───────────────────────────────────────────────────────
 
   function switchPage(id: string) {
@@ -365,7 +457,7 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
     const newId = crypto.randomUUID();
     updateBoard(prev => ({
       ...prev,
-      pages: [...prev.pages, { id: newId, title: `Page ${prev.pages.length + 1}`, images: [] }],
+      pages: [...prev.pages, { id: newId, title: `Page ${prev.pages.length + 1}`, images: [], links: [] }],
     }));
     switchPage(newId);
   }
@@ -560,18 +652,26 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
     const idsToMove = current.has(id) ? [...current] : [id];
     if (!current.has(id)) setSelectedIds(new Set([id]));
     update(prev => { const moving = prev.filter(i => idsToMove.includes(i.id)); const rest = prev.filter(i => !idsToMove.includes(i.id)); return [...rest, ...moving]; });
+    updateLinks(prev => { const moving = prev.filter(l => idsToMove.includes(l.id)); const rest = prev.filter(l => !idsToMove.includes(l.id)); return [...rest, ...moving]; });
     const origPositions: Record<string, { x: number; y: number }> = {};
-    for (const imgId of idsToMove) { const img = imagesRef.current.find(i => i.id === imgId); if (img) origPositions[imgId] = { x: img.x, y: img.y }; }
+    for (const itemId of idsToMove) {
+      const img = imagesRef.current.find(i => i.id === itemId);
+      if (img) { origPositions[itemId] = { x: img.x, y: img.y }; continue; }
+      const link = linksRef.current.find(l => l.id === itemId);
+      if (link) origPositions[itemId] = { x: link.x, y: link.y };
+    }
     activeOp.current = { kind: "move", startX: e.clientX, startY: e.clientY, origPositions };
-  }, [update, focusImageById]);
+  }, [update, updateLinks, focusImageById]);
 
   const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    const selected = imagesRef.current.filter(i => selectedIdsRef.current.has(i.id));
-    const bounds = groupBoundsOf(selected); if (!bounds) return;
+    const selectedImgs  = imagesRef.current.filter(i => selectedIdsRef.current.has(i.id));
+    const selectedLnks  = linksRef.current.filter(l => selectedIdsRef.current.has(l.id));
+    const allSelected   = [...selectedImgs, ...selectedLnks];
+    const bounds = groupBoundsOf(allSelected); if (!bounds) return;
     const origSizes: Record<string, { x: number; y: number; width: number; height: number }> = {};
-    for (const img of selected) origSizes[img.id] = { x: img.x, y: img.y, width: img.width, height: img.height };
+    for (const item of allSelected) origSizes[item.id] = { x: item.x, y: item.y, width: item.width, height: item.height };
     activeOp.current = { kind: "resize", startX: e.clientX, groupLeft: bounds.x, groupTop: bounds.y, groupOrigWidth: bounds.width, origSizes };
   }, []);
 
@@ -621,14 +721,28 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
     }
     if (op.kind === "move") {
       const dx = e.clientX - op.startX, dy = e.clientY - op.startY;
-      update(prev => prev.map(img => { const orig = op.origPositions[img.id]; return orig ? { ...img, x: orig.x + dx, y: orig.y + dy } : img; }));
+      updateBoard(prev => ({
+        ...prev,
+        pages: prev.pages.map(p => p.id !== activePageIdRef.current ? p : {
+          ...p,
+          images: p.images.map(img => { const orig = op.origPositions[img.id]; return orig ? { ...img, x: orig.x + dx, y: orig.y + dy } : img; }),
+          links:  p.links.map(link => { const orig = op.origPositions[link.id]; return orig ? { ...link, x: orig.x + dx, y: orig.y + dy } : link; }),
+        }),
+      }));
       return;
     }
     if (op.kind === "resize") {
       const scale = Math.max(0.05, (op.groupOrigWidth + (e.clientX - op.startX)) / op.groupOrigWidth);
-      update(prev => prev.map(img => { const orig = op.origSizes[img.id]; if (!orig) return img; return { ...img, x: Math.round(op.groupLeft + (orig.x - op.groupLeft) * scale), y: Math.round(op.groupTop + (orig.y - op.groupTop) * scale), width: Math.max(10, Math.round(orig.width * scale)), height: Math.max(10, Math.round(orig.height * scale)) }; }));
+      updateBoard(prev => ({
+        ...prev,
+        pages: prev.pages.map(p => p.id !== activePageIdRef.current ? p : {
+          ...p,
+          images: p.images.map(img => { const orig = op.origSizes[img.id]; if (!orig) return img; return { ...img, x: Math.round(op.groupLeft + (orig.x - op.groupLeft) * scale), y: Math.round(op.groupTop + (orig.y - op.groupTop) * scale), width: Math.max(10, Math.round(orig.width * scale)), height: Math.max(10, Math.round(orig.height * scale)) }; }),
+          links:  p.links.map(link => { const orig = op.origSizes[link.id]; if (!orig) return link; return { ...link, x: Math.round(op.groupLeft + (orig.x - op.groupLeft) * scale), y: Math.round(op.groupTop + (orig.y - op.groupTop) * scale), width: Math.max(60, Math.round(orig.width * scale)), height: Math.max(40, Math.round(orig.height * scale)) }; }),
+        }),
+      }));
     }
-  }, [update]);
+  }, [updateBoard]);
 
   const handlePointerUp = useCallback(() => {
     const op = activeOp.current; activeOp.current = null;
@@ -636,18 +750,44 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
       const bs = boxState; setBoxState(null); if (!bs) return;
       const box = normalizeBox(bs);
       if (box.w < 4 && box.h < 4) return;
-      const hits = imagesRef.current.filter(img => boxIntersects(img, box));
+      const hits = [
+        ...imagesRef.current.filter(img  => boxIntersects(img,  box)),
+        ...linksRef.current.filter( link => boxIntersects(link, box)),
+      ];
       if (hits.length > 0) setSelectedIds(new Set(hits.map(i => i.id)));
     } else { setBoxState(null); }
   }, [boxState]);
+
+  const handleLinkPointerDown = useCallback((e: React.PointerEvent, id: string) => {
+    e.stopPropagation();
+    if (e.shiftKey) {
+      setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+      return;
+    }
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const current = selectedIdsRef.current;
+    const idsToMove = current.has(id) ? [...current] : [id];
+    if (!current.has(id)) setSelectedIds(new Set([id]));
+    update(prev => { const moving = prev.filter(i => idsToMove.includes(i.id)); const rest = prev.filter(i => !idsToMove.includes(i.id)); return [...rest, ...moving]; });
+    updateLinks(prev => { const moving = prev.filter(l => idsToMove.includes(l.id)); const rest = prev.filter(l => !idsToMove.includes(l.id)); return [...rest, ...moving]; });
+    const origPositions: Record<string, { x: number; y: number }> = {};
+    for (const itemId of idsToMove) {
+      const img = imagesRef.current.find(i => i.id === itemId);
+      if (img) { origPositions[itemId] = { x: img.x, y: img.y }; continue; }
+      const link = linksRef.current.find(l => l.id === itemId);
+      if (link) origPositions[itemId] = { x: link.x, y: link.y };
+    }
+    activeOp.current = { kind: "move", startX: e.clientX, startY: e.clientY, origPositions };
+  }, [update, updateLinks]);
 
   // ── Early return after all hooks ──────────────────────────────────────────
   if (!canvasJson) return <CanvasLoader />;
 
   // ── Derived render values ─────────────────────────────────────────────────
 
-  const selectedImages = images.filter(img => selectedIds.has(img.id));
-  const groupBounds    = groupBoundsOf(selectedImages);
+  const selectedImages = images.filter(img  => selectedIds.has(img.id));
+  const selectedLinks  = links.filter( link => selectedIds.has(link.id));
+  const groupBounds    = groupBoundsOf([...selectedImages, ...selectedLinks]);
   const normalizedBox  = boxState ? normalizeBox(boxState) : null;
   const PAD = 6;
   const focusedImage = focusedId ? images.find(i => i.id === focusedId) ?? null : null;
@@ -675,6 +815,16 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
         >
           <Plus size={14} />
         </button>
+        <div className="ml-auto mr-1 shrink-0">
+          <button
+            onClick={() => setShowAddLink(true)}
+            title="Add link"
+            className="flex items-center gap-1.5 px-2.5 h-6 rounded text-xs text-neutral-500 hover:text-neutral-300 hover:bg-neutral-700/50 transition-colors"
+          >
+            <Link2 size={12} />
+            <span>Add link</span>
+          </button>
+        </div>
       </div>
 
       {/* Canvas row */}
@@ -691,9 +841,9 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
           onPointerUp={handlePointerUp}
           onContextMenu={e => e.preventDefault()}
         >
-          {images.length === 0 && !isUploading && (
+          {images.length === 0 && links.length === 0 && !isUploading && (
             <div className="absolute inset-0 flex items-center justify-center text-neutral-600 select-none pointer-events-none text-sm">
-              Drag images from your computer or browser to place them
+              Drag images here, or use Add link to pin a URL
             </div>
           )}
 
@@ -811,6 +961,56 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
             );
           })}
 
+          {links.map(link => {
+            const isSelected = selectedIds.has(link.id);
+            let hostname = link.url;
+            try { hostname = new URL(link.url).hostname; } catch {}
+            return (
+              <div key={link.id}
+                onPointerDown={e => handleLinkPointerDown(e, link.id)}
+                style={{ position: "absolute", left: link.x, top: link.y, width: link.width, height: link.height,
+                  cursor: "grab", touchAction: "none", userSelect: "none",
+                  background: "#1e1e1e", border: `1px solid ${isSelected ? "#22c55e" : "#383838"}`,
+                  borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column",
+                  boxShadow: "0 2px 10px rgba(0,0,0,0.5)", zIndex: isSelected ? 25 : 15 }}>
+                {/* Header row */}
+                <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 8px 5px", borderBottom: "1px solid #2a2a2a", flexShrink: 0 }}>
+                  {link.favicon && (
+                    <img src={link.favicon} alt="" width={14} height={14} draggable={false}
+                      style={{ flexShrink: 0, borderRadius: 2, pointerEvents: "none" }} />
+                  )}
+                  <span style={{ fontSize: 11, color: "#737373", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {hostname}
+                  </span>
+                  <a href={link.url} target="_blank" rel="noopener noreferrer"
+                    onPointerDown={e => e.stopPropagation()}
+                    title="Open link"
+                    style={{ display: "flex", alignItems: "center", color: "#525252", flexShrink: 0, padding: 2, borderRadius: 3 }}>
+                    <ExternalLink size={11} />
+                  </a>
+                  <button onPointerDown={e => e.stopPropagation()} onClick={() => deleteLink(link.id)}
+                    title="Delete"
+                    style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", color: "#525252", padding: 2, flexShrink: 0, borderRadius: 3 }}>
+                    <X size={11} />
+                  </button>
+                </div>
+                {/* Title */}
+                <div style={{ padding: "5px 8px 4px", flex: 1, overflow: "hidden" }}>
+                  <p style={{ margin: 0, fontSize: 12, color: "#d4d4d4", lineHeight: 1.4,
+                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    {link.title}
+                  </p>
+                </div>
+                {/* URL */}
+                <div style={{ padding: "0 8px 6px", flexShrink: 0 }}>
+                  <p style={{ margin: 0, fontSize: 10, color: "#4a4a4a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {link.url}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+
           {groupBounds && (
             <div style={{ position: "absolute", left: groupBounds.x - PAD, top: groupBounds.y - PAD, width: groupBounds.width + PAD * 2, height: groupBounds.height + PAD * 2, border: "2px solid #22c55e", pointerEvents: "none", zIndex: 30 }}>
               {shiftHeld && (
@@ -850,6 +1050,13 @@ function RefBoardInner({ projectId, pendingFocusId, onFocusConsumed, initialPage
           </div>
         )}
       </div>
+
+      {showAddLink && (
+        <AddLinkModal
+          onAdd={(url, title, favicon) => addLink(url, title, favicon)}
+          onClose={() => setShowAddLink(false)}
+        />
+      )}
     </div>
   );
 }

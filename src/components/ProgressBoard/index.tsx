@@ -226,7 +226,7 @@ function ProgressBoardInner({ projectId, onImageRefClick }: {
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
-                      className={`flex-1 overflow-y-auto min-h-0 px-2 pb-1 flex flex-col gap-2 transition-colors rounded-lg ${
+                      className={`scrollbar-dark flex-1 overflow-y-auto min-h-0 px-2 pb-1 flex flex-col gap-2 transition-colors rounded-lg ${
                         snapshot.isDraggingOver ? "bg-neutral-700/20" : ""
                       }`}
                     >

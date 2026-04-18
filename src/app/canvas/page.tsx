@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ScrollText, Images, ChevronLeft, ChevronRight, BarChart2,
+  ScrollText, Images, ChevronLeft, ChevronRight, BarChart2, BarChart3,
   Code2, Map, Users, PenLine, FolderOpen, LogOut, Settings, Lightbulb,
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -18,6 +18,7 @@ import ProjectsBoard, { type Project } from "@/components/ProjectsBoard";
 import TeamCanvas from "@/components/TeamCanvas";
 import SettingsCanvas from "@/components/SettingsCanvas";
 import IdeationCanvas from "@/components/IdeationCanvas";
+import PollsCanvas from "@/components/PollsCanvas";
 
 type ActiveProject = { id: string; name: string };
 
@@ -35,6 +36,7 @@ const canvasItems: RibbonItem[] = [
   { id: "code-layout", icon: <Code2 size={22} />,     label: "Code Layout" },
   { id: "map-layout",  icon: <Map size={22} />,       label: "Map Layout" },
   { id: "writing",     icon: <PenLine size={22} />,   label: "Writing" },
+  { id: "polls",       icon: <BarChart3 size={22} />, label: "Polls" },
   { id: "team",        icon: <Users size={22} />,     label: "Team / Credits" },
 ];
 
@@ -259,6 +261,8 @@ export default function CanvasPage() {
         <CodeLayout key={projectId} projectId={projectId} />
       ) : active === "map-layout" ? (
         <Placeholder label="Map Layout" />
+      ) : active === "polls" ? (
+        <PollsCanvas key={projectId} projectId={projectId} />
       ) : active === "team" ? (
         <TeamCanvas key={projectId} projectId={projectId} />
       ) : active === "writing" ? (

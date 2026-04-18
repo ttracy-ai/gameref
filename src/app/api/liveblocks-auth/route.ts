@@ -25,9 +25,10 @@ export async function POST(req: NextRequest) {
   //   script_{projectId}                               — Script editor
   //   team_{projectId}                                 — Team management
   //   refboard_{projectId}                             — Reference board
+  //   ideation_{projectId}                             — Ideation board
   const match =
     (room as string).match(/^gdd_([^_]+)_.+$/) ??
-    (room as string).match(/^(?:progress|codelayout|script|team|refboard)_([^_]+)$/);
+    (room as string).match(/^(?:progress|codelayout|script|team|refboard|ideation)_([^_]+)$/);
   if (!match) return new Response("Invalid room", { status: 400 });
   const projectId = match[1];
 

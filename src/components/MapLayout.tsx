@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, X, Pencil, Pin, PinOff, MapPin, FileText, Image as ImageIcon, Loader2, Trash2 } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Plus, X, Pencil, Pin, PinOff, MapPin, FileText, Image as ImageIcon, Loader2, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { loadCanvasData, syncCanvasData } from "@/lib/canvasStorage";
 import { RoomProvider, useStorage, useMutation } from "@/lib/liveblocks-map";
 
@@ -108,18 +108,29 @@ function LayerTab({ layer, isActive, canDelete, onSwitch, onDelete, onRename }: 
 // ── Pin marker ────────────────────────────────────────────────────────────────
 
 function PinMarker({ pin, onSelect }: { pin: MapPin; onSelect: () => void }) {
-  if (!pin.visible) return null;
-  const color = pin.type === "image" ? "#84cc16" : "#f59e0b";
+  const color = pin.visible
+    ? (pin.type === "image" ? "#84cc16" : "#f59e0b")
+    : "#525252";
   return (
     <div
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
-      title={pin.label || (pin.type === "note" ? pin.note : undefined)}
-      style={{ position: "absolute", left: `${pin.x}%`, top: `${pin.y}%`, transform: "translate(-50%, -100%)", zIndex: 10 }}
-      className="cursor-pointer group/pin"
+      title={pin.visible ? (pin.label || undefined) : `Hidden: ${pin.label || "pin"}`}
+      style={{
+        position: "absolute", left: `${pin.x}%`, top: `${pin.y}%`,
+        transform: "translate(-50%, -100%)", zIndex: 10,
+        opacity: pin.visible ? 1 : 0.35,
+      }}
+      className="cursor-pointer"
     >
       <svg width="20" height="26" viewBox="0 0 20 26" fill="none">
-        <path d="M10 0C4.477 0 0 4.477 0 10c0 7.5 10 16 10 16s10-8.5 10-16c0-5.523-4.477-10-10-10z" fill={color} stroke="rgba(0,0,0,0.3)" strokeWidth="1" />
-        <circle cx="10" cy="10" r="4" fill="rgba(0,0,0,0.25)" />
+        <path
+          d="M10 0C4.477 0 0 4.477 0 10c0 7.5 10 16 10 16s10-8.5 10-16c0-5.523-4.477-10-10-10z"
+          fill={pin.visible ? color : "none"}
+          stroke={color}
+          strokeWidth={pin.visible ? "1" : "1.5"}
+          strokeDasharray={pin.visible ? "none" : "3 2"}
+        />
+        <circle cx="10" cy="10" r="4" fill={pin.visible ? "rgba(0,0,0,0.25)" : color} fillOpacity={pin.visible ? 1 : 0.4} />
       </svg>
     </div>
   );
@@ -294,6 +305,7 @@ function MapLayoutInner({ projectId, initialData }: { projectId: string; initial
   const [addingPin, setAddingPin]     = useState(false);
   const [selectedPin, setSelectedPin] = useState<{ layerId: string; pin: MapPin } | null>(null);
   const [uploading, setUploading]     = useState(false);
+  const [zoom, setZoom]               = useState(1);
   const [refImages, setRefImages]     = useState<PlacedImage[]>([]);
   const imgRef                        = useRef<HTMLImageElement>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
@@ -497,15 +509,44 @@ function MapLayoutInner({ projectId, initialData }: { projectId: string; initial
           <MapPin size={13} />
           {addingPin ? "Click map to place pin" : "Add pin"}
         </button>
-        <span className="text-xs text-neutral-700 ml-2">
-          {activeLayer ? `${activeLayer.pins.filter((p) => p.visible).length} / ${activeLayer.pins.length} pins visible` : ""}
-        </span>
+
+        {activeLayer && activeLayer.pins.length > 0 && (
+          <span className="text-xs text-neutral-600">
+            {activeLayer.pins.filter((p) => p.visible).length}/{activeLayer.pins.length} visible
+          </span>
+        )}
+
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.25).toFixed(2)))}
+            disabled={zoom <= 0.25}
+            title="Zoom out"
+            className="flex items-center justify-center w-7 h-7 rounded text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ZoomOut size={14} />
+          </button>
+          <button
+            onClick={() => setZoom(1)}
+            title="Reset zoom"
+            className="text-xs text-neutral-600 hover:text-neutral-300 w-10 text-center transition-colors"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            onClick={() => setZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
+            disabled={zoom >= 4}
+            title="Zoom in"
+            className="flex items-center justify-center w-7 h-7 rounded text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ZoomIn size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Map area */}
-      <div className="flex-1 overflow-auto flex items-center justify-center bg-neutral-950 scrollbar-dark">
+      <div className="flex-1 overflow-auto flex items-center justify-center bg-neutral-950 scrollbar-dark p-6">
         {activeLayer && (
-          <div className="relative" style={{ maxWidth: "80vw" }}>
+          <div className="relative shrink-0" style={{ width: `calc(80vw * ${zoom})` }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               ref={imgRef}
@@ -514,7 +555,7 @@ function MapLayoutInner({ projectId, initialData }: { projectId: string; initial
               onClick={handleMapClick}
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
-              style={{ maxWidth: "80vw", maxHeight: "75vh", display: "block", cursor: addingPin ? "crosshair" : "default" }}
+              style={{ width: "100%", display: "block", cursor: addingPin ? "crosshair" : "default" }}
               className="rounded-lg shadow-2xl select-none"
             />
             {/* Pins */}

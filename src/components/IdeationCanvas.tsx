@@ -260,7 +260,7 @@ function IdeaCard({
       </div>
 
       {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4 flex flex-col gap-5">
+      <div className="scrollbar-dark flex-1 overflow-y-auto min-h-0 px-4 py-4 flex flex-col gap-5">
 
         {editing ? (
           // ── Edit mode ──

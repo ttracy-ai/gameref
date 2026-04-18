@@ -180,7 +180,7 @@ export default function ProjectsBoard({
                             <div
                               {...drag.dragHandleProps}
                               onClick={(e) => e.stopPropagation()}
-                              className="absolute top-3 left-3 opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-neutral-400 cursor-grab active:cursor-grabbing transition-opacity"
+                              className="absolute top-1/2 -translate-y-1/2 right-2 opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-neutral-400 cursor-grab active:cursor-grabbing transition-opacity"
                             >
                               <GripVertical size={14} />
                             </div>

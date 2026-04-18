@@ -2,7 +2,7 @@
 
 import {
   ScrollText, Images, ChevronLeft, ChevronRight, BarChart2,
-  Code2, Map, Users, PenLine, FolderOpen, LogOut, Settings,
+  Code2, Map, Users, PenLine, FolderOpen, LogOut, Settings, Lightbulb,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { signOut } from "next-auth/react";
@@ -17,6 +17,7 @@ import CodeLayout from "@/components/CodeLayout";
 import ProjectsBoard, { type Project } from "@/components/ProjectsBoard";
 import TeamCanvas from "@/components/TeamCanvas";
 import SettingsCanvas from "@/components/SettingsCanvas";
+import IdeationCanvas from "@/components/IdeationCanvas";
 
 type ActiveProject = { id: string; name: string };
 
@@ -27,6 +28,7 @@ type RibbonItem = {
 };
 
 const canvasItems: RibbonItem[] = [
+  { id: "ideation",    icon: <Lightbulb size={22} />, label: "Ideation" },
   { id: "progress",    icon: <BarChart2 size={22} />, label: "Progress" },
   { id: "gdd",         icon: <ScrollText size={22} />, label: "Game Design Document" },
   { id: "refboard",    icon: <Images size={22} />,    label: "Reference Board" },
@@ -240,6 +242,8 @@ export default function CanvasPage() {
           activeProjectId={null}
           onOpenProject={handleOpenProject}
         />
+      ) : active === "ideation" ? (
+        <IdeationCanvas key={projectId} projectId={projectId} />
       ) : active === "progress" ? (
         <ProgressBoard key={projectId} projectId={projectId} onImageRefClick={handleImageRefClick} />
       ) : active === "refboard" ? (
